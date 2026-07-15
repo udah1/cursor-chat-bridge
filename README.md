@@ -114,6 +114,7 @@ auto-continues when a reply arrives) needs the hooks that full `install` sets up
   "activeAdapter": "github",
   "pollIntervalMs": 60000,      // how often to check for replies (min 10000)
   "minPollIntervalMs": 10000,
+  "stopBudgetMin": 60,          // minutes the agent keeps waiting for a reply; RESETS on every reply
   "caCertPath": "", // usually leave empty. Set this to a corporate CA bundle (PEM) if the daemon runs behind a TLS-intercepting proxy where Node's fetch fails ("TypeError: fetch failed") while curl works — e.g. some corporate networks intercept discord.com / api.github.com.
   "requireConfirmForDestructive": true,
   "adapters": {
@@ -137,6 +138,7 @@ A change needs a daemon restart (`chat-bridge shutdown`) to affect a running dae
 |---|---|---|
 | `BRIDGE_PLATFORM` | `activeAdapter` | `github` \| `telegram` \| `discord` \| `teams` |
 | `BRIDGE_POLL_INTERVAL` | poll interval, in **seconds** | `30` |
+| `BRIDGE_STOP_BUDGET_MIN` | minutes the `stop` hook keeps waiting for a reply (resets on every reply). Also settable as `stopBudgetMin` in `config.json` — the reliable knob, since the hook doesn't inherit the MCP entry's env | `60` |
 | `BRIDGE_CA_CERT` | `caCertPath` | `/path/to/corp-ca-bundle.pem` |
 | `BRIDGE_GITHUB_REPO` | github `owner/repo` | `you/cursor-bridge-inbox` |
 | `BRIDGE_GITHUB_TOKEN` | github token | `gho_…` |

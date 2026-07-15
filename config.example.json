@@ -3,6 +3,7 @@
   "pollIntervalMs": 60000,
   "minPollIntervalMs": 10000,
   "awaitTimeoutMs": 1800000,
+  "stopBudgetMin": 60,
   "caCertPath": "",
   "requireConfirmForDestructive": true,
   "adapters": {

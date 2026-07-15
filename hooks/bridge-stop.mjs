@@ -26,8 +26,24 @@ const DEBUG_LOG = path.join(RUNTIME, "hook-stdin.log");
 const STOP_LOG = path.join(RUNTIME, "stop-hook.log");
 const EXPECT_INJECTION = path.join(RUNTIME, "expect-injection");
 
-// Total time we're willing to keep the session waiting for a reply, across re-arm cycles.
-const TOTAL_BUDGET_MS = Number(process.env.BRIDGE_MAX_STOP_BLOCK_MS || 60 * 60 * 1000); // 1h
+// Total time to keep the session waiting for a reply, across re-arm cycles. This budget RESETS on
+// every user message: a received reply clears the wait-state, so the next wait starts fresh — i.e.
+// it's "N minutes since the last user message". Configurable (first match wins):
+//   1. BRIDGE_STOP_BUDGET_MIN env (minutes)   2. BRIDGE_MAX_STOP_BLOCK_MS env (raw ms)
+//   3. "stopBudgetMin" in ~/.cursor/chat-bridge/config.json (minutes)   4. default 60 min.
+// The config.json path is the reliable knob since a `stop` hook doesn't inherit the MCP entry's
+// env; it's re-read every invocation so changes take effect without a restart.
+function resolveBudgetMs() {
+  const envMin = Number(process.env.BRIDGE_STOP_BUDGET_MIN);
+  if (Number.isFinite(envMin) && envMin > 0) return envMin * 60 * 1000;
+  const envMs = Number(process.env.BRIDGE_MAX_STOP_BLOCK_MS);
+  if (Number.isFinite(envMs) && envMs > 0) return envMs;
+  const cfg = readJSON(path.join(RUNTIME, "config.json"));
+  const cfgMin = Number(cfg?.stopBudgetMin);
+  if (Number.isFinite(cfgMin) && cfgMin > 0) return cfgMin * 60 * 1000;
+  return 60 * 60 * 1000;
+}
+const TOTAL_BUDGET_MS = resolveBudgetMs();
 // Per-invocation blocking window, GROWING per re-arm cycle to probe Cursor's hook-timeout
 // ceiling: start at BASE and add STEP each cycle (90s, 120s, 150s, ...). Each window MUST stay
 // under Cursor's cap so the hook can return and re-arm; once a window is killed we've found the
@@ -190,6 +206,8 @@ async function main() {
     }
     if (r.messages && r.messages.length) {
       const replyText = r.messages.map((m) => m.text).join("\n");
+      // Reset the wait budget on every user message: clearing wait-state means the NEXT wait
+      // starts fresh from now, so the countdown is always "N minutes since the last reply".
       clearWaitState(conversationId);
       slog(started, `EXIT reply-received (${r.messages.length} msg, ${replyText.length} chars) -> inject followup`);
       try {
