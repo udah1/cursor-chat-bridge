@@ -31,8 +31,9 @@ On activation:
 
 ## Behavior while in remote chat mode
 
-- At the **end of every turn**, call `bridge_send_and_await` (with your `session` handle) with a
-  concise summary of what you did plus any decision/question, then handle the result:
+- At the **end of every turn**, call `bridge_send_and_await` (with your `session` handle, and the
+  message in the `text` argument) with a concise summary of what you did plus any
+  decision/question, then handle the result:
   - `status: "message"` → act on the reply and continue.
   - `status: "timeout"` (the ~50s poll window elapsed with no reply) → **just end your turn
     quietly; do NOT report it as an error or give up.** The `stop` hook keeps waiting up to an

@@ -35,8 +35,12 @@ function resolveConversationId(explicit?: unknown): string | null {
   if (activeConversationId) return activeConversationId;
   const ws = readWsPointer(WORKSPACE)?.conversationId;
   if (ws && readMarker(ws)?.active) return ws;
-  const ls = readLastSubmit()?.conversationId;
-  if (ls && readMarker(ls)?.active) return ls;
+  // last-submit is a single global file; only trust it if it was written for OUR workspace,
+  // otherwise a different Cursor window's submit could hijack this conversation.
+  const ls = readLastSubmit();
+  if (ls?.conversationId && ls.workspace === WORKSPACE && readMarker(ls.conversationId)?.active) {
+    return ls.conversationId;
+  }
   return null;
 }
 
@@ -50,6 +54,8 @@ const SESSION_ARG = {
     "The session handle returned by bridge_start for THIS conversation. Always pass it so the right chat thread " +
     "is used (required to keep multiple conversations in the same workspace separate).",
 };
+
+const TEXT_ARG = { type: "string", description: "The message text to post to the chat thread." };
 
 const TOOLS = [
   {
@@ -70,12 +76,11 @@ const TOOLS = [
   {
     name: "bridge_send",
     description:
-      "Post a message (e.g. a turn summary or a question) to this conversation's chat thread. Pass the `session` " +
-      "handle returned by bridge_start.",
+      "Post a message (e.g. a turn summary or a question) to this conversation's chat thread. Put the message in " +
+      "the `text` argument (alias: `message`). Pass the `session` handle returned by bridge_start.",
     inputSchema: {
       type: "object",
-      properties: { text: { type: "string" }, session: SESSION_ARG },
-      required: ["text"],
+      properties: { text: TEXT_ARG, message: TEXT_ARG, session: SESSION_ARG },
     },
   },
   {
@@ -88,12 +93,11 @@ const TOOLS = [
   {
     name: "bridge_send_and_await",
     description:
-      "Post a message then block for the user's reply. Convenience for end-of-turn summary + question. Pass the " +
-      "`session` handle returned by bridge_start.",
+      "Post a message then block for the user's reply. Convenience for end-of-turn summary + question. Put the " +
+      "message in the `text` argument (alias: `message`). Pass the `session` handle returned by bridge_start.",
     inputSchema: {
       type: "object",
-      properties: { text: { type: "string" }, maxBlockMs: { type: "number" }, session: SESSION_ARG },
-      required: ["text"],
+      properties: { text: TEXT_ARG, message: TEXT_ARG, maxBlockMs: { type: "number" }, session: SESSION_ARG },
     },
   },
   {
@@ -126,9 +130,20 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       if (!check.ok) return text(check.guidance ?? `Adapter "${adapter}" is not configured.`);
 
       // Learn this conversation's id from the beforeSubmit handshake (written moments ago).
+      // Priority matters under concurrent windows:
+      //   1. explicit `session` the agent supplied (fully reliable),
+      //   2. the PER-WORKSPACE pointer — each window's hook writes ws/<hash(workspace)>.json, so
+      //      this is race-free across windows (unlike last-submit.json which is a single global
+      //      file every window overwrites),
+      //   3. last-submit ONLY if its workspace matches ours (so a different window's submit can't
+      //      hijack our id),
+      //   4. a fresh random id as a last resort.
       const ls = readLastSubmit();
-      const conversationId = ls?.conversationId ?? crypto.randomUUID();
-      const workspace = process.env.BRIDGE_WORKSPACE || ls?.workspace || WORKSPACE;
+      const wsPtr = readWsPointer(WORKSPACE)?.conversationId;
+      const lsMatchesWs = ls && ls.workspace && ls.workspace === WORKSPACE ? ls.conversationId : null;
+      const conversationId =
+        (args.session ? String(args.session) : null) ?? wsPtr ?? lsMatchesWs ?? crypto.randomUUID();
+      const workspace = WORKSPACE || ls?.workspace || "";
       const title = args.title || workspace.split("/").pop() || "cursor-session";
       debug(`bridge_start workspace=${workspace} conversationId=${conversationId} adapter=${adapter}`);
 
@@ -151,7 +166,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         `remote chat mode ON via "${adapter}". Thread ${r.thread?.thread}. ` +
           `Your session handle is "${conversationId}". IMPORTANT: pass session="${conversationId}" to every ` +
           `subsequent bridge_* call so this conversation stays on its own thread. At the end of each turn send a ` +
-          `summary + question with bridge_send_and_await, act on the reply, and do not use the Options/Questions UI.`
+          `summary + question with bridge_send_and_await (put the message in the "text" argument), act on the reply, ` +
+          `and do not use the Options/Questions UI.`
       );
     }
 
@@ -159,13 +175,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     if (!conversationId) return text("remote chat mode is not active for this conversation. Call bridge_start first.");
 
     if (name === "bridge_send") {
-      await daemonRequest("POST", "/send", { sessionId: conversationId, text: String(args.text ?? "") });
+      await daemonRequest("POST", "/send", { sessionId: conversationId, text: String(args.text ?? args.message ?? "") });
       return text("sent");
     }
 
     if (name === "bridge_await" || name === "bridge_send_and_await") {
       if (name === "bridge_send_and_await") {
-        await daemonRequest("POST", "/send", { sessionId: conversationId, text: String(args.text ?? "") });
+        await daemonRequest("POST", "/send", { sessionId: conversationId, text: String(args.text ?? args.message ?? "") });
       }
       const maxBlockMs = Math.min(Number(args.maxBlockMs ?? 50000), 55000);
       const r = await daemonRequest(

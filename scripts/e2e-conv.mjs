@@ -7,6 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -14,9 +15,20 @@ const MARKERS = path.join(os.homedir(), ".cursor", "chat-bridge", "markers");
 const LAST_SUBMIT = path.join(MARKERS, "last-submit.json");
 const DAEMON_FILE = path.join(os.homedir(), ".cursor", "chat-bridge", "daemon.json");
 
+// Mirror exactly what the real beforeSubmitPrompt hook writes: the global last-submit AND the
+// per-workspace pointer (ws/<hash(workspace)>.json). bridge_start prefers the per-workspace
+// pointer, so omitting it here would not reflect production behaviour.
+function wsHash(ws) {
+  return crypto.createHash("sha1").update(ws).digest("hex").slice(0, 16);
+}
 function writeHandshake(conversationId, workspace) {
   fs.mkdirSync(MARKERS, { recursive: true });
+  fs.mkdirSync(path.join(MARKERS, "ws"), { recursive: true });
   fs.writeFileSync(LAST_SUBMIT, JSON.stringify({ conversationId, workspace, at: Date.now() }));
+  fs.writeFileSync(
+    path.join(MARKERS, "ws", `${wsHash(workspace)}.json`),
+    JSON.stringify({ conversationId, at: Date.now() })
+  );
 }
 function readConvMarker(cid) {
   try {
