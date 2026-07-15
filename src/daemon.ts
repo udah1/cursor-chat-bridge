@@ -168,10 +168,12 @@ export class Daemon {
     const adapter = await this.getAdapter(rec.adapter);
     const { messageId } = await adapter.send(rec.thread, text);
     this.store.recordOwnMessage(sessionId, messageId);
-    // Fire an out-of-band push (best-effort) so the user gets a phone alert.
+    // Fire an out-of-band push (best-effort) so the user gets a phone alert. Include the
+    // thread id so conversations sharing a workspace title are still distinguishable.
+    const notifyTitle = rec.thread ? `${rec.title} #${rec.thread.thread}` : rec.title;
     pushNotify(
       this.cfg.notify,
-      { title: rec.title, message: text, clickUrl: threadUrl(rec.thread) },
+      { title: notifyTitle, message: text, clickUrl: threadUrl(rec.thread) },
       log
     ).catch(() => {});
     return this.send(res, 200, { ok: true, messageId });
