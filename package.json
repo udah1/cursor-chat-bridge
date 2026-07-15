@@ -4,6 +4,7 @@
   "description": "Control the Cursor AI agent from a chat app (GitHub Issues, Telegram, Teams, ...). Pluggable transport adapters + a local daemon + MCP tools + hooks.",
   "type": "module",
   "bin": {
+    "cursor-chat-bridge": "dist/cli.js",
     "chat-bridge": "dist/cli.js",
     "chat-bridge-mcp": "dist/mcp.js"
   },
@@ -20,7 +21,8 @@
     "dev:daemon": "tsx src/cli.ts daemon",
     "start": "node dist/cli.js daemon",
     "test": "node --test --import tsx test/*.test.ts",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "cursor",

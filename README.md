@@ -11,13 +11,12 @@ Pluggable **transport adapters** mean the same machinery works over different ch
 | Adapter | Status | Notes |
 |---|---|---|
 | **GitHub Issues** | ✅ working, tested end-to-end | Issue = session, comments = chat. Great mobile app + push. Default. |
-| **Telegram** | ✅ code complete, logic unit-tested | Forum topic per session via a bot. **Blocked by some corporate proxies** (see below) — run the daemon off-box in that case. |
+| **Telegram** | ✅ code complete, logic unit-tested | Forum topic per session via a bot. Some networks/proxies block `api.telegram.org` — run the daemon on a host that can reach it in that case. |
 | **Teams (Graph)** | 🚧 scaffold | Needs an Azure AD app (delegated `Chat.ReadWrite`). No bot required. |
 
-> Why not just Telegram? On a machine behind Zscaler/Amdocs, `api.telegram.org` is
-> blocked as a "suspicious URL" regardless of network (the endpoint agent tunnels even
-> home Wi-Fi). GitHub / Microsoft Graph are corporate-sanctioned and reachable, so they
-> are first-class channels here.
+> Why GitHub by default? GitHub and Microsoft Graph are reachable on most networks,
+> whereas `api.telegram.org` is blocked by some corporate proxies. GitHub Issues also
+> come with a solid mobile app and push, so it's the most broadly usable channel.
 
 ## How it works
 
@@ -63,18 +62,46 @@ Cursor turn ends ──▶ stop hook (conversation_id) ──▶ daemon /poll (l
 
 ## Install
 
+No clone needed — one command:
+
 ```bash
-git clone <repo> ~/personal-dev/cursor-chat-bridge
-cd ~/personal-dev/cursor-chat-bridge
-./scripts/install.sh        # build + wire into ~/.cursor (backs up existing files)
-# edit ~/.cursor/chat-bridge/config.json, then:
+npx cursor-chat-bridge@latest install
+```
+
+This copies the runtime into `~/.cursor/chat-bridge/app` and wires the three integration
+points, backing up (never overwriting) any existing files:
+
+- registers the MCP server in `~/.cursor/mcp.json`,
+- adds the `stop` + `beforeSubmitPrompt` hooks to `~/.cursor/hooks.json`,
+- installs the activation rule into `~/.cursor/rules/`.
+
+The hooks are **no-ops unless remote chat mode is active**, so they don't affect normal
+Cursor usage. Then:
+
+```bash
+# edit ~/.cursor/chat-bridge/config.json (pick an adapter + credentials), then:
 chat-bridge doctor          # validate the active adapter
 # reload Cursor, then say "start remote chat mode" in a chat
 ```
 
-`install.sh` merges (never overwrites) `~/.cursor/mcp.json` and `~/.cursor/hooks.json`,
-and installs the rule. The hooks are **no-ops unless bridge mode is active**, so they don't
-affect normal Cursor usage.
+Upgrade by re-running the same `install` command. To remove everything:
+
+```bash
+npx cursor-chat-bridge@latest uninstall            # keep config + state
+npx cursor-chat-bridge@latest uninstall --purge    # also delete config + state
+```
+
+### MCP-only (lite) alternative
+
+If you only want the MCP tools via the standard Cursor MCP flow (no auto-resume loop), add
+this to `~/.cursor/mcp.json` instead of running `install`:
+
+```json
+"cursor-chat-bridge": { "command": "npx", "args": ["-y", "cursor-chat-bridge", "chat-bridge-mcp"] }
+```
+
+You'll be able to `bridge_send`/`bridge_await` manually, but the hands-free loop (agent
+auto-continues when a reply arrives) needs the hooks that full `install` sets up.
 
 ## Configuration
 
@@ -104,7 +131,7 @@ A change needs a daemon restart (`chat-bridge shutdown`) to affect a running dae
 |---|---|---|
 | `BRIDGE_PLATFORM` | `activeAdapter` | `github` \| `telegram` \| `teams` |
 | `BRIDGE_POLL_INTERVAL` | poll interval, in **seconds** | `30` |
-| `BRIDGE_CA_CERT` | `caCertPath` | `/Users/you/vercel-ca-bundle.pem` |
+| `BRIDGE_CA_CERT` | `caCertPath` | `/path/to/corp-ca-bundle.pem` |
 | `BRIDGE_GITHUB_REPO` | github `owner/repo` | `you/cursor-bridge-inbox` |
 | `BRIDGE_GITHUB_TOKEN` | github token | `gho_…` |
 | `BRIDGE_TELEGRAM_BOT_TOKEN` | telegram bot token | — |
@@ -176,8 +203,8 @@ Collect / do:
 
 ### Telegram (best chat UX, but network-sensitive)
 Explain: "A Telegram **bot** posts to a **forum topic per session**; you chat from the
-Telegram app. This only works where the daemon can reach `api.telegram.org` — some corporate
-networks (e.g. Zscaler) block it, in which case run the daemon on an off-box host."
+Telegram app. This only works where the daemon can reach `api.telegram.org` — some networks
+or proxies block it, in which case run the daemon on a host that can reach it."
 Collect / do:
 - A **bot token** from **@BotFather**.
 - A **forum-enabled supergroup**: create a group → enable Topics → add the bot as admin with

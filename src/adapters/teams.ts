@@ -3,8 +3,8 @@ import type { AdapterCapabilities, PollResult, ThreadRef, TransportAdapter } fro
 /**
  * Microsoft Teams adapter (Graph, delegated auth) — SCAFFOLD.
  *
- * Teams has no open bot on a locked corporate tenant, but the Microsoft Graph API
- * (graph.microsoft.com) is corporate-sanctioned and reachable. The intended design:
+ * Teams has no open bot API on a locked-down tenant, but the Microsoft Graph API
+ * (graph.microsoft.com) is reachable on most networks. The intended design:
  *  - ensureThread: create/reuse a 1:1 "self" chat or a dedicated channel; a thread per session.
  *  - send: POST /chats/{id}/messages  (or /teams/{id}/channels/{id}/messages).
  *  - poll: GET messages since a timestamp; filter the agent's own messages by tracked ids.

@@ -5,12 +5,23 @@ import { CONFIG_PATH, ensureRuntimeDir } from "./paths.js";
 import { loadConfig, saveConfig } from "./config.js";
 import { createAdapter } from "./adapters/index.js";
 import { daemonRequest, isAlive, readDaemonFile } from "./daemonClient.js";
+import { runInstall, runUninstall } from "./installer.js";
 import { log } from "./logger.js";
 
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
 
   switch (cmd) {
+    case "install": {
+      runInstall();
+      break;
+    }
+
+    case "uninstall": {
+      runUninstall(args.includes("--purge"));
+      break;
+    }
+
     case "daemon": {
       // Ensure the CA cert is trusted for outbound HTTPS (this machine intercepts TLS).
       const cfg = loadConfig();
@@ -107,6 +118,8 @@ async function main() {
           "cursor-chat-bridge",
           "",
           "Usage: chat-bridge <command>",
+          "  install                wire into ~/.cursor (MCP + hooks + rule); no clone needed",
+          "  uninstall [--purge]    remove the wiring (--purge also deletes config + state)",
           "  daemon                 run the daemon (foreground)",
           "  init                   write a starter config to ~/.cursor/chat-bridge/config.json",
           "  doctor                 validate config + active adapter",

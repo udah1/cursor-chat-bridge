@@ -75,8 +75,8 @@ const assert = (cond, msg) => { console.log(`${cond ? "✅" : "❌"} ${msg}`); i
 
 const A = "e2e-conv-AAAA-" + Date.now();
 const B = "e2e-conv-BBBB-" + Date.now();
-const WA = "/Users/yehudah/personal-dev/projectA";
-const WB = "/Users/yehudah/personal-dev/projectB";
+const WA = "/tmp/ccb-e2e/projectA";
+const WB = "/tmp/ccb-e2e/projectB";
 
 // 1) Two conversations in different workspaces -> two distinct issues.
 writeHandshake(A, WA);
@@ -109,7 +109,7 @@ assert(awaitStatus === "timeout", `await after re-start returns '${awaitStatus}'
 // 3b) Two conversations in the SAME workspace: explicit session handle keeps them separate.
 const C = "e2e-conv-CCCC-" + Date.now();
 const D = "e2e-conv-DDDD-" + Date.now();
-const WC = "/Users/yehudah/personal-dev/projectShared";
+const WC = "/tmp/ccb-e2e/projectShared";
 writeHandshake(C, WC);
 await mcp(WC, (c) => callText(c, "bridge_start", { title: "convC" }));
 writeHandshake(D, WC);
@@ -126,7 +126,7 @@ await daemonStop(C);
 await daemonStop(D);
 
 // 4) Onboarding: telegram without config returns guidance, not an error/thread.
-const tg = await mcp("/Users/yehudah/personal-dev/projectC", (c) => callText(c, "bridge_start", { adapter: "telegram" }));
+const tg = await mcp("/tmp/ccb-e2e/projectC", (c) => callText(c, "bridge_start", { adapter: "telegram" }));
 assert(/botToken/i.test(tg) && /BotFather/i.test(tg), "telegram onboarding guidance returned when unconfigured");
 console.log("TELEGRAM GUIDANCE:", tg.slice(0, 100));
 
