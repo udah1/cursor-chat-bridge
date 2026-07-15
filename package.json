@@ -1,9 +1,10 @@
 {
-  "name": "cursor-chat-bridge",
+  "name": "cursor-telegram-chat",
   "version": "0.1.0",
-  "description": "Control the Cursor AI agent from a chat app (GitHub Issues, Telegram, Teams, ...). Pluggable transport adapters + a local daemon + MCP tools + hooks.",
+  "description": "Control the Cursor AI agent from a chat app (Telegram, GitHub Issues, Teams, ...). Pluggable transport adapters + a local daemon + MCP tools + hooks.",
   "type": "module",
   "bin": {
+    "cursor-telegram-chat": "dist/cli.js",
     "cursor-chat-bridge": "dist/cli.js",
     "chat-bridge": "dist/cli.js",
     "chat-bridge-mcp": "dist/mcp.js"

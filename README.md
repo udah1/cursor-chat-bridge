@@ -65,7 +65,7 @@ Cursor turn ends ──▶ stop hook (conversation_id) ──▶ daemon /poll (l
 No clone needed — one command:
 
 ```bash
-npx cursor-chat-bridge@latest install
+npx cursor-telegram-chat@latest install
 ```
 
 This copies the runtime into `~/.cursor/chat-bridge/app` and wires the three integration
@@ -87,8 +87,8 @@ chat-bridge doctor          # validate the active adapter
 Upgrade by re-running the same `install` command. To remove everything:
 
 ```bash
-npx cursor-chat-bridge@latest uninstall            # keep config + state
-npx cursor-chat-bridge@latest uninstall --purge    # also delete config + state
+npx cursor-telegram-chat@latest uninstall            # keep config + state
+npx cursor-telegram-chat@latest uninstall --purge    # also delete config + state
 ```
 
 ### MCP-only (lite) alternative
@@ -97,7 +97,7 @@ If you only want the MCP tools via the standard Cursor MCP flow (no auto-resume 
 this to `~/.cursor/mcp.json` instead of running `install`:
 
 ```json
-"cursor-chat-bridge": { "command": "npx", "args": ["-y", "cursor-chat-bridge", "chat-bridge-mcp"] }
+"cursor-chat-bridge": { "command": "npx", "args": ["-y", "cursor-telegram-chat", "chat-bridge-mcp"] }
 ```
 
 You'll be able to `bridge_send`/`bridge_await` manually, but the hands-free loop (agent

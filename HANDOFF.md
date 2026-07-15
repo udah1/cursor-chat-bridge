@@ -59,7 +59,7 @@ workspace check — that was the cross-window cross-talk bug (fixed in `e846137`
 
 ## Install model (no clone)
 
-`npx cursor-chat-bridge@latest install` (or, in dev, `npm run build && node dist/cli.js install`)
+`npx cursor-telegram-chat@latest install` (or, in dev, `npm run build && node dist/cli.js install`)
 copies `dist/` + `hooks/` into `~/.cursor/chat-bridge/app` and wires:
 - `~/.cursor/mcp.json` → `node <app>/dist/mcp.js` with `BRIDGE_WORKSPACE=${workspaceFolder}`,
 - `~/.cursor/hooks.json` → `node <app>/hooks/bridge-*.mjs`,
@@ -82,7 +82,7 @@ Dry-run safely with `HOME=$(mktemp -d) node dist/cli.js install`.
 
 ## How to continue (recommended next steps)
 
-1. **Publish to npm** so `npx cursor-chat-bridge` resolves for everyone (see below).
+1. **Publish to npm** so `npx cursor-telegram-chat` resolves for everyone (see below).
 2. **Live smoke test** after a real Cursor reload using the installed app-dir path (TRACKING.md
    top item): start remote chat mode, verify GitHub thread creation, reply from phone, confirm
    the `stop`-hook auto-resume loop and the `beforeSubmitPrompt` off-switch.
@@ -91,11 +91,12 @@ Dry-run safely with `HOME=$(mktemp -d) node dist/cli.js install`.
 
 ## Publishing
 
-- Package name `cursor-chat-bridge`; `bin` exposes `cursor-chat-bridge`/`chat-bridge` (→ cli.js)
-  and `chat-bridge-mcp` (→ mcp.js). `prepublishOnly` runs the build. `files` ships `dist`,
-  `hooks`, `rules`, `scripts`, `config.example.json`, `README.md`.
+- npm package name `cursor-telegram-chat` (the internal Cursor mcp.json entry key stays
+  `cursor-chat-bridge`). `bin` exposes `cursor-telegram-chat`/`cursor-chat-bridge`/`chat-bridge`
+  (→ cli.js) and `chat-bridge-mcp` (→ mcp.js). `prepublishOnly` runs the build. `files` ships
+  `dist`, `hooks`, `rules`, `scripts`, `config.example.json`, `README.md`.
 - Steps: bump `version`, `npm login`, `npm publish --access public`. Then `npx
-  cursor-chat-bridge@latest install` works anywhere.
+  cursor-telegram-chat@latest install` works anywhere.
 - Do NOT commit `~/.cursor/chat-bridge/config.json` or any token.
 
 ## Conventions / guardrails
