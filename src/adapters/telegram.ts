@@ -24,6 +24,12 @@ export interface TgUpdate {
   };
 }
 
+/** Human-friendly workspace name (basename of the cwd path), for the topic intro. */
+function workspaceName(cwd: unknown): string {
+  const s = typeof cwd === "string" ? cwd.replace(/[/\\]+$/, "") : "";
+  return s ? s.split(/[/\\]/).filter(Boolean).pop() || "" : "";
+}
+
 /**
  * Pure routing logic (exported for unit tests). Given a batch of updates and the
  * allow-list, returns messages to route (keyed by thread) and the next offset.
@@ -84,12 +90,23 @@ export class TelegramAdapter implements TransportAdapter {
     await this.call("getMe", {});
   }
 
-  async ensureThread(sessionId: string, title: string): Promise<ThreadRef> {
+  async ensureThread(sessionId: string, title: string, meta?: Record<string, unknown>): Promise<ThreadRef> {
     const topic = await this.call("createForumTopic", {
       chat_id: this.cfg.chatId,
       name: title.slice(0, 128),
     });
-    return { adapter: this.name, thread: String(topic.message_thread_id), meta: { chatId: this.cfg.chatId } };
+    const threadId = Number(topic.message_thread_id);
+    // Forum topics have no description field, so surface the workspace in a first message.
+    const ws = workspaceName(meta?.cwd);
+    if (ws) {
+      await this.call("sendMessage", {
+        chat_id: this.cfg.chatId,
+        message_thread_id: threadId,
+        text: `📁 *${ws}* — cursor-chat-bridge session`,
+        parse_mode: "Markdown",
+      }).catch(() => {});
+    }
+    return { adapter: this.name, thread: String(threadId), meta: { chatId: this.cfg.chatId } };
   }
 
   async send(thread: ThreadRef, text: string): Promise<{ messageId: string }> {

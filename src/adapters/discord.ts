@@ -4,6 +4,12 @@ import type { AdapterCapabilities, InboundMsg, PollResult, ThreadRef, TransportA
 const API = "https://discord.com/api/v10";
 const MAX_CONTENT = 2000; // Discord hard limit per message.
 
+/** Human-friendly workspace name (basename of the cwd path), for channel descriptions. */
+function workspaceName(cwd: unknown): string {
+  const s = typeof cwd === "string" ? cwd.replace(/[/\\]+$/, "") : "";
+  return s ? s.split(/[/\\]/).filter(Boolean).pop() || "" : "";
+}
+
 interface DiscordAdapterConfig {
   /** Bot token from the Discord Developer Portal (NOT the "client secret"). */
   botToken?: string;
@@ -138,10 +144,12 @@ export class DiscordAdapter implements TransportAdapter {
 
   async ensureThread(sessionId: string, title: string, meta?: Record<string, unknown>): Promise<ThreadRef> {
     // Create a dedicated channel per session in the server (Discord slugifies the name).
+    const ws = workspaceName(meta?.cwd);
+    const topic = (ws ? `📁 ${ws} · ` : "") + `cursor-chat-bridge session ${sessionId}`;
     const body: Record<string, unknown> = {
       name: title.slice(0, 100),
       type: 0, // GUILD_TEXT
-      topic: `cursor-chat-bridge session ${sessionId}`.slice(0, 1024),
+      topic: topic.slice(0, 1024), // shown as the channel description
     };
     if (this.parentId) body.parent_id = this.parentId; // group under the anchor's category
     const r = await this.api(`/guilds/${this.guildId}/channels`, {

@@ -20,8 +20,12 @@ bridge mode. Recognize intent, not exact words. Examples that should trigger it:
   "telegram mode" / "github mode" (also selects that channel)
 
 On activation:
-1. Call `bridge_start` (optionally pass a short `title`, and `adapter` if the user named a
-   platform like Telegram/GitHub/Teams).
+1. Call `bridge_start`. **Pass a `title`** that concisely names THIS conversation the way it
+   appears in Cursor's chat list — a ≤6-word summary of the conversation's topic (e.g. "GitHub
+   Actions autopublish", not the folder name and not a generic label). Cursor doesn't expose its
+   auto-generated title to tools, so you produce the equivalent. Also pass `adapter` if the user
+   named a platform (Telegram/GitHub/Teams/Discord). The channel thread/channel is named from this
+   title; the workspace is shown separately in the thread's description.
 2. **Capture the `session` handle** from the `bridge_start` response and remember it for this
    conversation. Pass `session=<handle>` to **every** subsequent `bridge_*` call — this is what
    keeps multiple conversations (even in the same workspace) on their own separate threads.
