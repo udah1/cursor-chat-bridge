@@ -1,6 +1,6 @@
 {
   "name": "cursor-telegram-chat",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Control the Cursor AI agent from a chat app (Telegram, GitHub Issues, Teams, ...). Pluggable transport adapters + a local daemon + MCP tools + hooks.",
   "type": "module",
   "bin": {
@@ -24,6 +24,10 @@
     "test": "node --test --import tsx test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prepublishOnly": "npm run build"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/udah1/cursor-chat-bridge.git"
   },
   "keywords": [
     "cursor",
