@@ -9,13 +9,30 @@
  * random one. Best-effort: notification failures never block the chat flow.
  */
 export interface NotifyConfig {
-  type?: "none" | "ntfy";
+  /**
+   * Single on/off + intensity dial for ntfy pushes, on the 0..5 scale:
+   *   0 = OFF (no push), 1 = min, 2 = low, 3 = normal, 4 = high, 5 = max.
+   * Defaults to 0 (off). A push is sent only when priority >= 1 AND a topic is set.
+   */
+  priority?: number | string;
   /** ntfy server base URL (default https://ntfy.sh). */
   server?: string;
   /** ntfy topic to publish to (also the string you subscribe to in the app). */
   topic?: string;
-  /** ntfy priority 1..5 (default 4 = high). */
-  priority?: number | string;
+  /** @deprecated no longer used; enablement is driven by `priority` (0 = off). */
+  type?: "none" | "ntfy";
+}
+
+/** Normalize the priority dial to an integer 0..5 (0 = disabled). */
+export function notifyPriority(cfg: NotifyConfig | undefined): number {
+  const raw = Number(cfg?.priority ?? 0);
+  if (!Number.isFinite(raw)) return 0;
+  return Math.max(0, Math.min(5, Math.round(raw)));
+}
+
+/** Whether an ntfy push should be sent for this config. */
+export function notifyEnabled(cfg: NotifyConfig | undefined): boolean {
+  return !!cfg?.topic && notifyPriority(cfg) >= 1;
 }
 
 export interface NotifyPayload {
@@ -35,17 +52,17 @@ export async function pushNotify(
   payload: NotifyPayload,
   log?: (m: string) => void
 ): Promise<void> {
-  if (!cfg || cfg.type !== "ntfy" || !cfg.topic) return;
-  const server = (cfg.server || "https://ntfy.sh").replace(/\/+$/, "");
+  if (!notifyEnabled(cfg)) return;
+  const server = (cfg!.server || "https://ntfy.sh").replace(/\/+$/, "");
   const headers: Record<string, string> = {
     Title: headerSafe(payload.title || "cursor-chat-bridge").slice(0, 200) || "cursor-chat-bridge",
-    Priority: String(cfg.priority ?? 4),
+    Priority: String(notifyPriority(cfg)),
     Tags: "speech_balloon",
   };
   if (payload.clickUrl) headers.Click = payload.clickUrl;
   const body = (payload.message || "").slice(0, 1000);
   try {
-    const r = await fetch(`${server}/${encodeURIComponent(cfg.topic)}`, {
+    const r = await fetch(`${server}/${encodeURIComponent(cfg!.topic!)}`, {
       method: "POST",
       headers,
       body,

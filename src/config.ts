@@ -23,7 +23,7 @@ const DEFAULTS: BridgeConfig = {
   caCertPath: "",
   requireConfirmForDestructive: true,
   adapters: {},
-  notify: { type: "none" },
+  notify: { priority: 0 },
 };
 
 export function loadConfig(): BridgeConfig {
@@ -68,13 +68,17 @@ export function applyEnvOverrides(cfg: BridgeConfig): void {
     tg.allowedUserIds = e.BRIDGE_TELEGRAM_ALLOWED_USER_IDS.split(",").map((s) => s.trim()).filter(Boolean);
   }
 
-  if (e.BRIDGE_NTFY_TOPIC) {
-    cfg.notify = {
-      ...(cfg.notify ?? {}),
-      type: "ntfy",
-      topic: e.BRIDGE_NTFY_TOPIC.trim(),
-      server: e.BRIDGE_NTFY_SERVER?.trim() || cfg.notify?.server || "https://ntfy.sh",
-    };
+  if (e.BRIDGE_NTFY_TOPIC || e.BRIDGE_NTFY_PRIORITY || e.BRIDGE_NTFY_SERVER) {
+    cfg.notify = { ...(cfg.notify ?? {}) };
+    if (e.BRIDGE_NTFY_TOPIC) cfg.notify.topic = e.BRIDGE_NTFY_TOPIC.trim();
+    if (e.BRIDGE_NTFY_SERVER) cfg.notify.server = e.BRIDGE_NTFY_SERVER.trim();
+    if (e.BRIDGE_NTFY_PRIORITY) {
+      const pr = Number(e.BRIDGE_NTFY_PRIORITY);
+      if (Number.isFinite(pr)) cfg.notify.priority = pr;
+    } else if (e.BRIDGE_NTFY_TOPIC && !(Number(cfg.notify.priority) >= 1)) {
+      // Supplying a topic via env implies "turn it on"; use a gentle default if not set.
+      cfg.notify.priority = 3;
+    }
   }
 }
 

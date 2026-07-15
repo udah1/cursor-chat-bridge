@@ -112,6 +112,7 @@ A change needs a daemon restart (`chat-bridge shutdown`) to affect a running dae
 | `BRIDGE_TELEGRAM_ALLOWED_USER_IDS` | comma-separated whitelist | `123,456` |
 | `BRIDGE_WORKSPACE` | workspace path for per-window session keying | set by the installer to `${workspaceFolder}` |
 | `BRIDGE_NTFY_TOPIC` | enable ntfy push + set the topic | `cursor-bridge-ab12cd…` |
+| `BRIDGE_NTFY_PRIORITY` | push priority 0..5 (0=off) | `2` |
 | `BRIDGE_NTFY_SERVER` | ntfy server base URL | `https://ntfy.sh` (default) |
 
 `BRIDGE_WORKSPACE` is wired automatically by the installer to `${workspaceFolder}` so each
@@ -134,10 +135,14 @@ Setup:
 3. Configure it — either in `config.json`:
 
 ```jsonc
-"notify": { "type": "ntfy", "server": "https://ntfy.sh", "topic": "cursor-bridge-<random>", "priority": 4 }
+"notify": { "server": "https://ntfy.sh", "topic": "cursor-bridge-<random>", "priority": 3 }
 ```
 
-   or via env: `BRIDGE_NTFY_TOPIC=cursor-bridge-<random>`.
+   `priority` is a single 0..5 dial and the on/off switch: **0 = off (default)**, 1=min, 2=low,
+   3=normal, 4=high, 5=max. A push is sent only when `priority >= 1` **and** a `topic` is set.
+   Or via env: `BRIDGE_NTFY_TOPIC=cursor-bridge-<random>` (implies priority 3 unless
+   `BRIDGE_NTFY_PRIORITY` is also set). Pushes are skipped when the active adapter is **Telegram**,
+   which already notifies you natively.
 
 Now every turn summary pings your phone; you still read and reply inside the GitHub issue.
 (ntfy.sh is reachable on networks that block Telegram/Pushover; you can also self-host and

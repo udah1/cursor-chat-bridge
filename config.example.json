@@ -6,10 +6,9 @@
   "caCertPath": "",
   "requireConfirmForDestructive": true,
   "notify": {
-    "type": "none",
     "server": "https://ntfy.sh",
     "topic": "",
-    "priority": 4
+    "priority": 0
   },
   "adapters": {
     "github": {
