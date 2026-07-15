@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { execSync } from "node:child_process";
 import { CONFIG_PATH, ensureRuntimeDir } from "./paths.js";
+import type { NotifyConfig } from "./notify.js";
 
 export interface BridgeConfig {
   activeAdapter: string;
@@ -10,6 +11,8 @@ export interface BridgeConfig {
   caCertPath?: string;
   requireConfirmForDestructive?: boolean;
   adapters: Record<string, any>;
+  /** Optional out-of-band push (e.g. ntfy) so you get a phone alert on each summary. */
+  notify?: NotifyConfig;
 }
 
 const DEFAULTS: BridgeConfig = {
@@ -20,6 +23,7 @@ const DEFAULTS: BridgeConfig = {
   caCertPath: "",
   requireConfirmForDestructive: true,
   adapters: {},
+  notify: { type: "none" },
 };
 
 export function loadConfig(): BridgeConfig {
@@ -62,6 +66,15 @@ export function applyEnvOverrides(cfg: BridgeConfig): void {
   if (e.BRIDGE_TELEGRAM_CHAT_ID) tg.chatId = e.BRIDGE_TELEGRAM_CHAT_ID;
   if (e.BRIDGE_TELEGRAM_ALLOWED_USER_IDS) {
     tg.allowedUserIds = e.BRIDGE_TELEGRAM_ALLOWED_USER_IDS.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+
+  if (e.BRIDGE_NTFY_TOPIC) {
+    cfg.notify = {
+      ...(cfg.notify ?? {}),
+      type: "ntfy",
+      topic: e.BRIDGE_NTFY_TOPIC.trim(),
+      server: e.BRIDGE_NTFY_SERVER?.trim() || cfg.notify?.server || "https://ntfy.sh",
+    };
   }
 }
 

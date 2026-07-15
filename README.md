@@ -111,12 +111,37 @@ A change needs a daemon restart (`chat-bridge shutdown`) to affect a running dae
 | `BRIDGE_TELEGRAM_CHAT_ID` | telegram forum group id | — |
 | `BRIDGE_TELEGRAM_ALLOWED_USER_IDS` | comma-separated whitelist | `123,456` |
 | `BRIDGE_WORKSPACE` | workspace path for per-window session keying | set by the installer to `${workspaceFolder}` |
+| `BRIDGE_NTFY_TOPIC` | enable ntfy push + set the topic | `cursor-bridge-ab12cd…` |
+| `BRIDGE_NTFY_SERVER` | ntfy server base URL | `https://ntfy.sh` (default) |
 
 `BRIDGE_WORKSPACE` is wired automatically by the installer to `${workspaceFolder}` so each
 Cursor window keys its sessions to the open project; you normally don't set it by hand.
 
 Per-conversation platform can also be chosen at runtime: say "start remote chat in Telegram"
 and the agent passes `bridge_start(adapter: "telegram")` for that conversation only.
+
+### Push notifications to your phone (ntfy)
+
+Heads-up about GitHub: the agent posts **as you**, and GitHub never notifies you about your
+own activity — **self @mentions and self-assignment don't notify either**. So to get a phone
+alert without a second account, cursor-chat-bridge can fire an out-of-band push via
+[ntfy](https://ntfy.sh) on every summary it posts. It's free, needs no account, is open-source
+and self-hostable, and the push deep-links straight to the GitHub issue.
+
+Setup:
+1. Install the **ntfy** app (iOS/Android) or use the web app.
+2. Pick a long, unguessable topic (topics are public-by-obscurity) and **subscribe** to it.
+3. Configure it — either in `config.json`:
+
+```jsonc
+"notify": { "type": "ntfy", "server": "https://ntfy.sh", "topic": "cursor-bridge-<random>", "priority": 4 }
+```
+
+   or via env: `BRIDGE_NTFY_TOPIC=cursor-bridge-<random>`.
+
+Now every turn summary pings your phone; you still read and reply inside the GitHub issue.
+(ntfy.sh is reachable on networks that block Telegram/Pushover; you can also self-host and
+point `server` at your own instance.)
 
 ### GitHub setup
 1. Create a private repo to act as your inbox (e.g. `cursor-bridge-inbox`).

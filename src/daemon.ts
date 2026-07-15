@@ -5,14 +5,26 @@ import { DAEMON_FILE, ensureRuntimeDir } from "./paths.js";
 import { loadConfig, type BridgeConfig } from "./config.js";
 import { Store } from "./state.js";
 import { createAdapter } from "./adapters/index.js";
-import type { InboundMsg, TransportAdapter } from "./types.js";
+import type { InboundMsg, ThreadRef, TransportAdapter } from "./types.js";
 import { log } from "./logger.js";
+import { pushNotify } from "./notify.js";
 
 export const DAEMON_VERSION = "0.1.0";
 const STOP_KEYWORDS = ["stop", "/stop", "עצור", "עצרי", "עצור."];
 
 function isStop(text: string): boolean {
   return STOP_KEYWORDS.includes(text.trim().toLowerCase()) || STOP_KEYWORDS.includes(text.trim());
+}
+
+/** Deep-link for a notification tap, when the adapter exposes enough metadata (GitHub issue). */
+function threadUrl(thread: ThreadRef | null): string | undefined {
+  if (!thread) return undefined;
+  const owner = (thread.meta as any)?.owner;
+  const repo = (thread.meta as any)?.repo;
+  if (thread.adapter === "github" && owner && repo) {
+    return `https://github.com/${owner}/${repo}/issues/${thread.thread}`;
+  }
+  return undefined;
 }
 
 export class Daemon {
@@ -156,6 +168,12 @@ export class Daemon {
     const adapter = await this.getAdapter(rec.adapter);
     const { messageId } = await adapter.send(rec.thread, text);
     this.store.recordOwnMessage(sessionId, messageId);
+    // Fire an out-of-band push (best-effort) so the user gets a phone alert.
+    pushNotify(
+      this.cfg.notify,
+      { title: rec.title, message: text, clickUrl: threadUrl(rec.thread) },
+      log
+    ).catch(() => {});
     return this.send(res, 200, { ok: true, messageId });
   }
 

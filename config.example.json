@@ -5,6 +5,12 @@
   "awaitTimeoutMs": 1800000,
   "caCertPath": "",
   "requireConfirmForDestructive": true,
+  "notify": {
+    "type": "none",
+    "server": "https://ntfy.sh",
+    "topic": "",
+    "priority": 4
+  },
   "adapters": {
     "github": {
       "owner": "udah1",
