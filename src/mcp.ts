@@ -24,8 +24,14 @@ function debug(msg: string): void {
   } catch {}
 }
 
-/** Resolve the conversation id for non-start tools: in-process cache, then workspace pointer, then last submit. */
-function resolveConversationId(): string | null {
+/**
+ * Resolve the session for non-start tools. Priority:
+ *  1. explicit `session` handle the agent carries from bridge_start (disambiguates multiple
+ *     conversations in the SAME workspace / shared MCP process — the only fully reliable signal),
+ *  2. in-process cache, 3. per-workspace pointer, 4. most recent submit.
+ */
+function resolveConversationId(explicit?: unknown): string | null {
+  if (explicit) return String(explicit);
   if (activeConversationId) return activeConversationId;
   const ws = readWsPointer(WORKSPACE)?.conversationId;
   if (ws && readMarker(ws)?.active) return ws;
@@ -37,6 +43,13 @@ function resolveConversationId(): string | null {
 function text(s: string) {
   return { content: [{ type: "text", text: s }] };
 }
+
+const SESSION_ARG = {
+  type: "string",
+  description:
+    "The session handle returned by bridge_start for THIS conversation. Always pass it so the right chat thread " +
+    "is used (required to keep multiple conversations in the same workspace separate).",
+};
 
 const TOOLS = [
   {
@@ -56,27 +69,43 @@ const TOOLS = [
   },
   {
     name: "bridge_send",
-    description: "Post a message (e.g. a turn summary or a question) to this conversation's chat thread.",
-    inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
+    description:
+      "Post a message (e.g. a turn summary or a question) to this conversation's chat thread. Pass the `session` " +
+      "handle returned by bridge_start.",
+    inputSchema: {
+      type: "object",
+      properties: { text: { type: "string" }, session: SESSION_ARG },
+      required: ["text"],
+    },
   },
   {
     name: "bridge_await",
     description:
       "Block waiting for the user's reply in the chat thread (single long-poll window). Returns the reply text, " +
-      "or status 'timeout' (call again to keep waiting) or 'stopped' (mode ended).",
-    inputSchema: { type: "object", properties: { maxBlockMs: { type: "number" } } },
+      "or status 'timeout' (call again to keep waiting) or 'stopped' (mode ended). Pass the `session` handle from bridge_start.",
+    inputSchema: { type: "object", properties: { maxBlockMs: { type: "number" }, session: SESSION_ARG } },
   },
   {
     name: "bridge_send_and_await",
-    description: "Post a message then block for the user's reply. Convenience for end-of-turn summary + question.",
+    description:
+      "Post a message then block for the user's reply. Convenience for end-of-turn summary + question. Pass the " +
+      "`session` handle returned by bridge_start.",
     inputSchema: {
       type: "object",
-      properties: { text: { type: "string" }, maxBlockMs: { type: "number" } },
+      properties: { text: { type: "string" }, maxBlockMs: { type: "number" }, session: SESSION_ARG },
       required: ["text"],
     },
   },
-  { name: "bridge_stop", description: "Stop remote chat mode for this conversation.", inputSchema: { type: "object", properties: {} } },
-  { name: "bridge_status", description: "Show remote chat mode status for this conversation.", inputSchema: { type: "object", properties: {} } },
+  {
+    name: "bridge_stop",
+    description: "Stop remote chat mode for this conversation. Pass the `session` handle from bridge_start.",
+    inputSchema: { type: "object", properties: { session: SESSION_ARG } },
+  },
+  {
+    name: "bridge_status",
+    description: "Show remote chat mode status for this conversation. Pass the `session` handle from bridge_start.",
+    inputSchema: { type: "object", properties: { session: SESSION_ARG } },
+  },
 ];
 
 const server = new Server({ name: "cursor-chat-bridge", version: "0.1.0" }, { capabilities: { tools: {} } });
@@ -119,13 +148,14 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         text: `🟢 *remote chat mode on* for \`${title}\`. I'll post summaries here; reply to steer me. Say \`stop\` to end.`,
       }).catch(() => {});
       return text(
-        `remote chat mode ON via "${adapter}". Thread ${r.thread?.thread} for conversation ${conversationId}. ` +
-          `From now on, at the end of each turn send a summary + question with bridge_send_and_await, and act on the ` +
-          `reply. Do not use the Options/Questions UI.`
+        `remote chat mode ON via "${adapter}". Thread ${r.thread?.thread}. ` +
+          `Your session handle is "${conversationId}". IMPORTANT: pass session="${conversationId}" to every ` +
+          `subsequent bridge_* call so this conversation stays on its own thread. At the end of each turn send a ` +
+          `summary + question with bridge_send_and_await, act on the reply, and do not use the Options/Questions UI.`
       );
     }
 
-    const conversationId = resolveConversationId();
+    const conversationId = resolveConversationId(args.session);
     if (!conversationId) return text("remote chat mode is not active for this conversation. Call bridge_start first.");
 
     if (name === "bridge_send") {

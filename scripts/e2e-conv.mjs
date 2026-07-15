@@ -94,6 +94,25 @@ let awaitStatus = "";
 try { awaitStatus = JSON.parse(awaitA).status; } catch {}
 assert(awaitStatus === "timeout", `await after re-start returns '${awaitStatus}' (expected 'timeout', NOT 'stopped')`);
 
+// 3b) Two conversations in the SAME workspace: explicit session handle keeps them separate.
+const C = "e2e-conv-CCCC-" + Date.now();
+const D = "e2e-conv-DDDD-" + Date.now();
+const WC = "/Users/yehudah/personal-dev/projectShared";
+writeHandshake(C, WC);
+await mcp(WC, (c) => callText(c, "bridge_start", { title: "convC" }));
+writeHandshake(D, WC);
+await mcp(WC, (c) => callText(c, "bridge_start", { title: "convD" }));
+const mC = readConvMarker(C);
+const mD = readConvMarker(D);
+assert(mC?.thread && mD?.thread && mC.thread !== mD.thread, `same-workspace: distinct threads (C=${mC?.thread} D=${mD?.thread})`);
+// The workspace pointer now points at D (started last). Explicit session=C must still win.
+const statusC = await mcp(WC, (c) => callText(c, "bridge_status", { session: C }));
+let scThread = null;
+try { scThread = JSON.parse(statusC).session?.thread?.thread; } catch {}
+assert(scThread === mC.thread, `explicit session=C resolves to C's thread ${mC?.thread} (got ${scThread}) despite D starting last`);
+await daemonStop(C);
+await daemonStop(D);
+
 // 4) Onboarding: telegram without config returns guidance, not an error/thread.
 const tg = await mcp("/Users/yehudah/personal-dev/projectC", (c) => callText(c, "bridge_start", { adapter: "telegram" }));
 assert(/botToken/i.test(tg) && /BotFather/i.test(tg), "telegram onboarding guidance returned when unconfigured");
