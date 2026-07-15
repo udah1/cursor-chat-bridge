@@ -1,0 +1,24 @@
+{
+  "activeAdapter": "github",
+  "pollIntervalMs": 60000,
+  "minPollIntervalMs": 10000,
+  "awaitTimeoutMs": 1800000,
+  "caCertPath": "",
+  "requireConfirmForDestructive": true,
+  "adapters": {
+    "github": {
+      "owner": "udah1",
+      "repo": "cursor-bridge-inbox",
+      "tokenCommand": "gh auth token --user udah1",
+      "token": ""
+    },
+    "telegram": {
+      "botToken": "",
+      "chatId": "",
+      "allowedUserIds": []
+    },
+    "teams": {
+      "note": "Requires an Azure AD app registration with delegated Chat.ReadWrite; see README. Not usable without tenant admin consent."
+    }
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "name": "cursor-chat-bridge",
+  "version": "0.1.0",
+  "description": "Control the Cursor AI agent from a chat app (GitHub Issues, Telegram, Teams, ...). Pluggable transport adapters + a local daemon + MCP tools + hooks.",
+  "type": "module",
+  "bin": {
+    "chat-bridge": "dist/cli.js",
+    "chat-bridge-mcp": "dist/mcp.js"
+  },
+  "files": [
+    "dist",
+    "hooks",
+    "rules",
+    "scripts",
+    "config.example.json",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev:daemon": "tsx src/cli.ts daemon",
+    "start": "node dist/cli.js daemon",
+    "test": "node --test --import tsx test/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "cursor",
+    "mcp",
+    "telegram",
+    "github",
+    "teams",
+    "agent",
+    "chatops",
+    "remote-control"
+  ],
+  "author": "udah1",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
