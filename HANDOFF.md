@@ -5,8 +5,16 @@ You are the next agent picking up this project. This is your full brief. Read it
 from the README.
 
 Repo: `https://github.com/udah1/cursor-chat-bridge` (personal GitHub account `udah1`).
+npm: **`cursor-telegram-chat`** — published, `0.1.0` is live (tag `latest`).
 Local dev path on the original machine: `~/personal-dev/cursor-chat-bridge` (don't hardcode
 this anywhere user-facing).
+
+## Current status (2026-07-15)
+
+Shipped and on npm. Install anywhere with `npx cursor-telegram-chat@latest install` (no clone).
+Everything below is implemented and verified on-machine; the only outstanding item is a live
+Cursor-reload smoke test from a phone (see "How to continue"). Full open-issue list is in
+`TRACKING.md`.
 
 ## What this project is
 
@@ -82,21 +90,25 @@ Dry-run safely with `HOME=$(mktemp -d) node dist/cli.js install`.
 
 ## How to continue (recommended next steps)
 
-1. **Publish to npm** so `npx cursor-telegram-chat` resolves for everyone (see below).
-2. **Live smoke test** after a real Cursor reload using the installed app-dir path (TRACKING.md
-   top item): start remote chat mode, verify GitHub thread creation, reply from phone, confirm
-   the `stop`-hook auto-resume loop and the `beforeSubmitPrompt` off-switch.
-3. Consider making `session` **required** on non-start tools if any cross-talk reappears.
-4. Implement the **Teams** adapter (`src/adapters/teams.ts`) — Graph delegated auth.
+1. **Live smoke test** (the one unverified thing) after a real Cursor reload using the installed
+   app-dir path (TRACKING.md top item): start remote chat mode, verify GitHub thread creation,
+   reply from phone, confirm the `stop`-hook auto-resume loop and the `beforeSubmitPrompt`
+   off-switch. Best done fresh via `npx cursor-telegram-chat@latest install` on another machine.
+2. Consider making `session` **required** on non-start tools if any cross-talk reappears.
+3. Implement the **Teams** adapter (`src/adapters/teams.ts`) — Graph delegated auth.
 
-## Publishing
+## Publishing (already done for 0.1.0 — this is for future releases)
 
 - npm package name `cursor-telegram-chat` (the internal Cursor mcp.json entry key stays
   `cursor-chat-bridge`). `bin` exposes `cursor-telegram-chat`/`cursor-chat-bridge`/`chat-bridge`
   (→ cli.js) and `chat-bridge-mcp` (→ mcp.js). `prepublishOnly` runs the build. `files` ships
-  `dist`, `hooks`, `rules`, `scripts`, `config.example.json`, `README.md`.
-- Steps: bump `version`, `npm login`, `npm publish --access public`. Then `npx
-  cursor-telegram-chat@latest install` works anywhere.
+  `dist`, `hooks`, `rules`, `scripts`, `config.example.json`, `README.md` (note: HANDOFF.md /
+  TRACKING.md are git-only, NOT in the npm tarball).
+- Published under account `udah1`, which has **2FA** → publish needs an OTP
+  (`npm publish --access public --otp=<code>`). `npm view` may 404 for a minute after a first
+  publish (CDN propagation) — not an error.
+- To ship an update: **bump `version`** (npm rejects re-publishing the same version), then
+  `npm publish --access public --otp=<code>`.
 - Do NOT commit `~/.cursor/chat-bridge/config.json` or any token.
 
 ## Conventions / guardrails
@@ -112,10 +124,9 @@ Dry-run safely with `HOME=$(mktemp -d) node dist/cli.js install`.
 ## Recent commits (newest first)
 
 ```
+b21bf5a docs: mark cursor-telegram-chat@0.1.0 published
+c056604 chore: publish under npm name cursor-telegram-chat
+69eca31 feat: npx installer (no clone) + sanitize public docs
 687c128 feat(notify): single 0..5 priority dial (0=off), default off, skip Telegram
 e846137 fix: stop cross-window conversation cross-talk + text/message param
-359e556 notify: include thread id in push title
-a0bfa28 Add ntfy push sidecar so you get phone alerts on GitHub
-d69dde3 rule: handle bridge_send_and_await timeout gracefully
 ```
-(This handoff + the npx installer + README sanitization are the next commit.)
