@@ -23,9 +23,9 @@ Legend: [ ] open · [x] done · [~] partial/in-progress
   delegated auth (device-code / app registration) + implement ensureThread/send/poll.
 - [ ] **Telegram not usable behind proxies** that block `api.telegram.org`. Code is complete
   and unit-tested; needs an off-box daemon to actually run in blocked environments.
-- [ ] **npm publish** not done yet (needs `npm login`). npm package name is
-  `cursor-telegram-chat`. Until published, `npx cursor-telegram-chat` won't resolve for others;
-  see HANDOFF.md "Publishing".
+- [x] **npm publish** — `cursor-telegram-chat@0.1.0` is live (tag `latest`, account `udah1`).
+  `npx cursor-telegram-chat@latest install` now resolves for everyone. Bump `version` before
+  the next publish (npm won't accept a re-publish of the same version).
 
 ## Recently fixed
 
