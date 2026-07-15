@@ -9,7 +9,10 @@ interface DiscordAdapterConfig {
   botToken?: string;
   /** Resolve the bot token via a shell command instead of storing it inline. */
   botTokenCommand?: string;
-  /** Parent text channel id; each session opens a thread under it. */
+  /**
+   * Anchor channel id. Used to discover the server (guild) and category under which a fresh
+   * channel is created for each session. Any existing text channel in the target server works.
+   */
   channelId: string;
   /** Optional whitelist of Discord user ids allowed to steer the agent. */
   allowedUserIds?: (number | string)[];
@@ -85,6 +88,8 @@ export class DiscordAdapter implements TransportAdapter {
 
   private token = "";
   private botUserId = "";
+  private guildId = "";
+  private parentId: string | null = null; // category to nest session channels under, if any
   private allowed: Set<string>;
 
   constructor(private cfg: DiscordAdapterConfig, private logFn: (m: string) => void) {
@@ -115,37 +120,53 @@ export class DiscordAdapter implements TransportAdapter {
     const me = await this.api("/users/@me");
     if (!me.ok) throw new Error(`discord adapter: invalid bot token (HTTP ${me.status})`);
     this.botUserId = String(((await me.json()) as { id: string }).id);
-    // Validate channel access.
+    // Validate channel access and discover the server (guild) + category from the anchor channel.
     const ch = await this.api(`/channels/${this.cfg.channelId}`);
     if (!ch.ok) {
       throw new Error(
         `discord adapter: cannot access channel ${this.cfg.channelId} (HTTP ${ch.status}). ` +
-          "Make sure the bot is in the server and has View Channel + Create Threads + Send Messages."
+          "Make sure the bot is in the server and has View Channel + Manage Channels."
       );
     }
+    const anchor = (await ch.json()) as { guild_id?: string; parent_id?: string | null };
+    if (!anchor.guild_id) {
+      throw new Error(`discord adapter: channel ${this.cfg.channelId} is not a server channel (no guild)`);
+    }
+    this.guildId = String(anchor.guild_id);
+    this.parentId = anchor.parent_id ?? null;
   }
 
   async ensureThread(sessionId: string, title: string, meta?: Record<string, unknown>): Promise<ThreadRef> {
-    const r = await this.api(`/channels/${this.cfg.channelId}/threads`, {
+    // Create a dedicated channel per session in the server (Discord slugifies the name).
+    const body: Record<string, unknown> = {
+      name: title.slice(0, 100),
+      type: 0, // GUILD_TEXT
+      topic: `cursor-chat-bridge session ${sessionId}`.slice(0, 1024),
+    };
+    if (this.parentId) body.parent_id = this.parentId; // group under the anchor's category
+    const r = await this.api(`/guilds/${this.guildId}/channels`, {
       method: "POST",
-      body: JSON.stringify({
-        name: `🧵 ${title}`.slice(0, 100),
-        type: 11, // GUILD_PUBLIC_THREAD (created without a starter message)
-        auto_archive_duration: 1440,
-      }),
+      body: JSON.stringify(body),
     });
-    if (!r.ok) throw new Error(`discord ensureThread failed: HTTP ${r.status} ${await r.text()}`);
-    const th = (await r.json()) as { id: string };
-    // Post a short intro so the thread isn't empty.
+    if (!r.ok) {
+      const detail = await r.text();
+      const hint =
+        r.status === 403
+          ? " — the bot needs the 'Manage Channels' permission in this server."
+          : "";
+      throw new Error(`discord ensureThread failed: HTTP ${r.status} ${detail}${hint}`);
+    }
+    const chan = (await r.json()) as { id: string };
+    // Post a short intro so the channel isn't empty.
     const intro =
       `**cursor-chat-bridge session** \`${sessionId}\`\n` +
       (meta?.cwd ? `📁 \`${meta.cwd}\`\n` : "") +
       "Reply here to steer the agent. Send `stop` to end the session.";
-    await this.api(`/channels/${th.id}/messages`, {
+    await this.api(`/channels/${chan.id}/messages`, {
       method: "POST",
       body: JSON.stringify({ content: intro.slice(0, MAX_CONTENT) }),
     }).catch(() => {});
-    return { adapter: this.name, thread: String(th.id), meta: { channelId: this.cfg.channelId } };
+    return { adapter: this.name, thread: String(chan.id), meta: { guildId: this.guildId } };
   }
 
   async send(thread: ThreadRef, text: string): Promise<{ messageId: string }> {
@@ -172,9 +193,7 @@ export class DiscordAdapter implements TransportAdapter {
   }
 
   async stop(thread: ThreadRef): Promise<void> {
-    await this.api(`/channels/${thread.thread}`, {
-      method: "PATCH",
-      body: JSON.stringify({ archived: true, locked: true }),
-    }).catch(() => {});
+    // End of session -> delete the per-session channel to keep the server tidy (best-effort).
+    await this.api(`/channels/${thread.thread}`, { method: "DELETE" }).catch(() => {});
   }
 }

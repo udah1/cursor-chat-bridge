@@ -33,8 +33,8 @@ const TOTAL_BUDGET_MS = Number(process.env.BRIDGE_MAX_STOP_BLOCK_MS || 60 * 60 *
 // under Cursor's cap so the hook can return and re-arm; once a window is killed we've found the
 // cap (read the last successful window from stop-hook.log). The re-arm cadence == the window, so
 // longer windows also mean fewer paid keep-alive turns.
-const WINDOW_BASE_MS = Number(process.env.BRIDGE_STOP_WINDOW_BASE_MS || 90 * 1000);
-const WINDOW_STEP_MS = Number(process.env.BRIDGE_STOP_WINDOW_STEP_MS || 30 * 1000);
+const WINDOW_BASE_MS = Number(process.env.BRIDGE_STOP_WINDOW_BASE_MS || 240 * 1000);
+const WINDOW_STEP_MS = Number(process.env.BRIDGE_STOP_WINDOW_STEP_MS || 180 * 1000);
 // Optional hard ceiling on the growing window (0 = unbounded, keep probing until killed).
 const WINDOW_MAX_MS = Number(process.env.BRIDGE_STOP_WINDOW_MAX_MS || 0);
 // Per-poll wait: how long each channel check blocks before looping. Controls reply-detection

@@ -23,7 +23,7 @@ const DEFAULTS: BridgeConfig = {
   caCertPath: "",
   requireConfirmForDestructive: true,
   adapters: {},
-  notify: { priority: 0 },
+  // ntfy push is OFF by default; enable it only via BRIDGE_NTFY_* env on the MCP entry.
 };
 
 export function loadConfig(): BridgeConfig {
