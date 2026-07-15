@@ -28,11 +28,17 @@ const EXPECT_INJECTION = path.join(RUNTIME, "expect-injection");
 
 // Total time we're willing to keep the session waiting for a reply, across re-arm cycles.
 const TOTAL_BUDGET_MS = Number(process.env.BRIDGE_MAX_STOP_BLOCK_MS || 60 * 60 * 1000); // 1h
-// Per-invocation blocking window. MUST be under Cursor's hook-timeout ceiling so the hook can
-// return and re-arm instead of being killed. Keep it comfortably below "a couple of minutes".
-const WINDOW_MS = Number(process.env.BRIDGE_STOP_WINDOW_MS || 90 * 1000);
+// Per-invocation blocking window, GROWING per re-arm cycle to probe Cursor's hook-timeout
+// ceiling: start at BASE and add STEP each cycle (90s, 120s, 150s, ...). Each window MUST stay
+// under Cursor's cap so the hook can return and re-arm; once a window is killed we've found the
+// cap (read the last successful window from stop-hook.log). The re-arm cadence == the window, so
+// longer windows also mean fewer paid keep-alive turns.
+const WINDOW_BASE_MS = Number(process.env.BRIDGE_STOP_WINDOW_BASE_MS || 90 * 1000);
+const WINDOW_STEP_MS = Number(process.env.BRIDGE_STOP_WINDOW_STEP_MS || 30 * 1000);
+// Optional hard ceiling on the growing window (0 = unbounded, keep probing until killed).
+const WINDOW_MAX_MS = Number(process.env.BRIDGE_STOP_WINDOW_MAX_MS || 0);
 // Per-poll wait: how long each channel check blocks before looping. Controls reply-detection
-// latency within a window (not the re-arm/LLM cadence — that's WINDOW_MS).
+// latency within a window (not the re-arm/LLM cadence — that's the window).
 const POLL_WAIT_MS = Number(process.env.BRIDGE_STOP_POLL_WAIT_MS || 30000);
 // If a persisted wait-state hasn't been touched in this long, treat it as stale (fresh wait).
 const STALE_MS = Number(process.env.BRIDGE_STOP_STALE_MS || 10 * 60 * 1000);
@@ -149,11 +155,15 @@ async function main() {
   const totalElapsed = now - started;
   const remainingBudget = TOTAL_BUDGET_MS - totalElapsed;
 
+  // Growing window: base + step per completed re-arm cycle (probes Cursor's kill ceiling).
+  let windowMs = WINDOW_BASE_MS + ws.cycles * WINDOW_STEP_MS;
+  if (WINDOW_MAX_MS > 0) windowMs = Math.min(windowMs, WINDOW_MAX_MS);
+
   slog(
     started,
     `START conv=${conversationId} session=${sessionId} adapter=${marker.adapter} cycle=${ws.cycles} ` +
       `totalElapsed=${(totalElapsed / 1000).toFixed(0)}s budgetLeft=${(remainingBudget / 1000).toFixed(0)}s ` +
-      `WINDOW_MS=${WINDOW_MS} status=${payload?.status ?? "?"} loop_count=${payload?.loop_count ?? "?"}`
+      `windowMs=${windowMs} (${(windowMs / 1000).toFixed(0)}s) status=${payload?.status ?? "?"} loop_count=${payload?.loop_count ?? "?"}`
   );
 
   if (remainingBudget <= 0) {
@@ -162,7 +172,7 @@ async function main() {
     process.exit(0);
   }
 
-  const windowDeadline = now + Math.min(WINDOW_MS, remainingBudget);
+  const windowDeadline = now + Math.min(windowMs, remainingBudget);
   while (Date.now() < windowDeadline) {
     seq++;
     const waitMs = Math.max(1000, Math.min(POLL_WAIT_MS, windowDeadline - Date.now()));
@@ -206,7 +216,13 @@ async function main() {
   } catch {}
   const waitedS = ((Date.now() - started) / 1000).toFixed(0);
   const budgetMin = Math.round(TOTAL_BUDGET_MS / 60000);
-  slog(started, `RE-ARM cycle=${ws.cycles} (waited ${waitedS}s) -> emit keep-alive followup`);
+  let nextWindowMs = WINDOW_BASE_MS + ws.cycles * WINDOW_STEP_MS;
+  if (WINDOW_MAX_MS > 0) nextWindowMs = Math.min(nextWindowMs, WINDOW_MAX_MS);
+  slog(
+    started,
+    `RE-ARM cycle=${ws.cycles} (waited ${waitedS}s, thisWindow=${(windowMs / 1000).toFixed(0)}s, ` +
+      `nextWindow=${(nextWindowMs / 1000).toFixed(0)}s) -> emit keep-alive followup`
+  );
   emitFollowup(
     `[chat-bridge keep-alive — NOT a user message] Still waiting for the remote user's reply via ` +
       `${marker.adapter}; none yet after ~${waitedS}s (will keep waiting up to ${budgetMin} min total). ` +

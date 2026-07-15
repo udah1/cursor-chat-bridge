@@ -22,6 +22,11 @@
       "chatId": "",
       "allowedUserIds": []
     },
+    "discord": {
+      "botToken": "",
+      "channelId": "",
+      "allowedUserIds": []
+    },
     "teams": {
       "note": "Requires an Azure AD app registration with delegated Chat.ReadWrite; see README. Not usable without tenant admin consent."
     }

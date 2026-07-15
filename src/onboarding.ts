@@ -51,6 +51,27 @@ export function checkAdapterConfig(adapter: string, cfg: BridgeConfig): ConfigCh
     };
   }
 
+  if (adapter === "discord") {
+    const missing: string[] = [];
+    if (!a.botToken && !a.botTokenCommand) missing.push("botToken (from the Discord Developer Portal → Bot → Reset Token)");
+    if (!a.channelId) missing.push("channelId (a text channel where the bot can create threads)");
+    if (missing.length === 0) return { ok: true };
+    return {
+      ok: false,
+      guidance:
+        "Discord channel isn't fully configured. Explain to the user: a bot posts a turn summary in a " +
+        "thread per session (under a text channel) and they reply from the Discord app. Unlike Telegram, " +
+        "Discord's API is reachable through most corporate proxies. Walk them through, step by step, and " +
+        `collect: ${missing.join("; ")}. Guide them: (1) go to https://discord.com/developers/applications, ` +
+        "create an application, add a Bot, and copy the bot token; (2) under Bot, enable the MESSAGE CONTENT " +
+        "INTENT; (3) invite the bot to a server via OAuth2 URL Generator with scope 'bot' and permissions " +
+        "View Channel + Send Messages + Create Public Threads + Send Messages in Threads + Read Message " +
+        "History; (4) enable Developer Mode in Discord (User Settings → Advanced) and right-click the target " +
+        "channel → Copy Channel ID. Optionally collect their Discord user id for allowedUserIds. Set these in " +
+        'config.adapters.discord, set activeAdapter to "discord", then re-run bridge_start.',
+    };
+  }
+
   if (adapter === "teams") {
     return {
       ok: false,

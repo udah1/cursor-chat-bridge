@@ -129,7 +129,7 @@ A change needs a daemon restart (`chat-bridge shutdown`) to affect a running dae
 
 | Env var | Overrides | Example |
 |---|---|---|
-| `BRIDGE_PLATFORM` | `activeAdapter` | `github` \| `telegram` \| `teams` |
+| `BRIDGE_PLATFORM` | `activeAdapter` | `github` \| `telegram` \| `discord` \| `teams` |
 | `BRIDGE_POLL_INTERVAL` | poll interval, in **seconds** | `30` |
 | `BRIDGE_CA_CERT` | `caCertPath` | `/path/to/corp-ca-bundle.pem` |
 | `BRIDGE_GITHUB_REPO` | github `owner/repo` | `you/cursor-bridge-inbox` |
@@ -137,6 +137,9 @@ A change needs a daemon restart (`chat-bridge shutdown`) to affect a running dae
 | `BRIDGE_TELEGRAM_BOT_TOKEN` | telegram bot token | — |
 | `BRIDGE_TELEGRAM_CHAT_ID` | telegram forum group id | — |
 | `BRIDGE_TELEGRAM_ALLOWED_USER_IDS` | comma-separated whitelist | `123,456` |
+| `BRIDGE_DISCORD_BOT_TOKEN` | discord bot token | — |
+| `BRIDGE_DISCORD_CHANNEL_ID` | discord text channel id (threads are opened under it) | — |
+| `BRIDGE_DISCORD_ALLOWED_USER_IDS` | comma-separated whitelist | `123,456` |
 | `BRIDGE_WORKSPACE` | workspace path for per-window session keying | set by the installer to `${workspaceFolder}` |
 | `BRIDGE_NTFY_TOPIC` | enable ntfy push + set the topic | `cursor-bridge-ab12cd…` |
 | `BRIDGE_NTFY_PRIORITY` | push priority 0..5 (0=off) | `2` |

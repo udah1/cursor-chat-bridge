@@ -68,6 +68,13 @@ export function applyEnvOverrides(cfg: BridgeConfig): void {
     tg.allowedUserIds = e.BRIDGE_TELEGRAM_ALLOWED_USER_IDS.split(",").map((s) => s.trim()).filter(Boolean);
   }
 
+  const dc = (cfg.adapters.discord = cfg.adapters.discord ?? {});
+  if (e.BRIDGE_DISCORD_BOT_TOKEN) dc.botToken = e.BRIDGE_DISCORD_BOT_TOKEN;
+  if (e.BRIDGE_DISCORD_CHANNEL_ID) dc.channelId = e.BRIDGE_DISCORD_CHANNEL_ID;
+  if (e.BRIDGE_DISCORD_ALLOWED_USER_IDS) {
+    dc.allowedUserIds = e.BRIDGE_DISCORD_ALLOWED_USER_IDS.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+
   if (e.BRIDGE_NTFY_TOPIC || e.BRIDGE_NTFY_PRIORITY || e.BRIDGE_NTFY_SERVER) {
     cfg.notify = { ...(cfg.notify ?? {}) };
     if (e.BRIDGE_NTFY_TOPIC) cfg.notify.topic = e.BRIDGE_NTFY_TOPIC.trim();
