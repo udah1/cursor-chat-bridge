@@ -170,9 +170,9 @@ export class Daemon {
     this.store.recordOwnMessage(sessionId, messageId);
     // Fire an out-of-band push (best-effort) so the user gets a phone alert. Include the
     // thread id so conversations sharing a workspace title are still distinguishable.
-    // Skip for channels that already push natively (Telegram) to avoid double-buzzing —
+    // Skip for channels that already push natively (Telegram, Discord) to avoid double-buzzing —
     // ntfy exists mainly because GitHub never notifies you about your own comments.
-    if (rec.adapter !== "telegram") {
+    if (rec.adapter !== "telegram" && rec.adapter !== "discord") {
       const notifyTitle = rec.thread ? `${rec.title} #${rec.thread.thread}` : rec.title;
       pushNotify(
         this.cfg.notify,

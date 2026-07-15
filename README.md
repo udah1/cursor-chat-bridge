@@ -11,12 +11,14 @@ Pluggable **transport adapters** mean the same machinery works over different ch
 | Adapter | Status | Notes |
 |---|---|---|
 | **GitHub Issues** | ✅ working, tested end-to-end | Issue = session, comments = chat. Great mobile app + push. Default. |
+| **Discord** | ✅ working | A **channel per session** via a bot (REST-polled, so it tunnels through TLS-intercepting proxies). Native mobile push. Needs the *Manage Channels* permission. |
 | **Telegram** | ✅ code complete, logic unit-tested | Forum topic per session via a bot. Some networks/proxies block `api.telegram.org` — run the daemon on a host that can reach it in that case. |
 | **Teams (Graph)** | 🚧 scaffold | Needs an Azure AD app (delegated `Chat.ReadWrite`). No bot required. |
 
-> Why GitHub by default? GitHub and Microsoft Graph are reachable on most networks,
+> Why GitHub by default? GitHub, Discord and Microsoft Graph are reachable on most networks,
 > whereas `api.telegram.org` is blocked by some corporate proxies. GitHub Issues also
 > come with a solid mobile app and push, so it's the most broadly usable channel.
+> Discord is a good phone-first alternative that also works behind corporate proxies.
 
 ## How it works
 
@@ -112,14 +114,18 @@ auto-continues when a reply arrives) needs the hooks that full `install` sets up
   "activeAdapter": "github",
   "pollIntervalMs": 60000,      // how often to check for replies (min 10000)
   "minPollIntervalMs": 10000,
-  "caCertPath": "", // usually leave empty. GitHub & MS Graph are not TLS-intercepted, so no CA is needed. Only set this (or use Node's --use-system-ca) for a Telegram daemon behind a TLS-intercepting proxy.
+  "caCertPath": "", // usually leave empty. Set this to a corporate CA bundle (PEM) if the daemon runs behind a TLS-intercepting proxy where Node's fetch fails ("TypeError: fetch failed") while curl works — e.g. some corporate networks intercept discord.com / api.github.com.
   "requireConfirmForDestructive": true,
   "adapters": {
     "github":  { "owner": "you", "repo": "cursor-bridge-inbox", "tokenCommand": "gh auth token --user you" },
+    "discord": { "botToken": "", "channelId": "" },
     "telegram":{ "botToken": "", "chatId": "", "allowedUserIds": [] }
   }
 }
 ```
+
+> ntfy push is **off by default** and is not part of this config — enable it only via the
+> `BRIDGE_NTFY_*` env vars on the MCP entry (see below).
 
 ### Env-var overrides (per MCP instance)
 
@@ -138,7 +144,7 @@ A change needs a daemon restart (`chat-bridge shutdown`) to affect a running dae
 | `BRIDGE_TELEGRAM_CHAT_ID` | telegram forum group id | — |
 | `BRIDGE_TELEGRAM_ALLOWED_USER_IDS` | comma-separated whitelist | `123,456` |
 | `BRIDGE_DISCORD_BOT_TOKEN` | discord bot token | — |
-| `BRIDGE_DISCORD_CHANNEL_ID` | discord text channel id (threads are opened under it) | — |
+| `BRIDGE_DISCORD_CHANNEL_ID` | discord **anchor** channel id (used to find the server + category; a fresh channel is created per session) | — |
 | `BRIDGE_DISCORD_ALLOWED_USER_IDS` | comma-separated whitelist | `123,456` |
 | `BRIDGE_WORKSPACE` | workspace path for per-window session keying | set by the installer to `${workspaceFolder}` |
 | `BRIDGE_NTFY_TOPIC` | enable ntfy push + set the topic | `cursor-bridge-ab12cd…` |
@@ -159,20 +165,19 @@ alert without a second account, cursor-chat-bridge can fire an out-of-band push 
 [ntfy](https://ntfy.sh) on every summary it posts. It's free, needs no account, is open-source
 and self-hostable, and the push deep-links straight to the GitHub issue.
 
+It's **off by default**. Enable it via env on the MCP entry (the recommended, config-free way):
+
 Setup:
 1. Install the **ntfy** app (iOS/Android) or use the web app.
 2. Pick a long, unguessable topic (topics are public-by-obscurity) and **subscribe** to it.
-3. Configure it — either in `config.json`:
+3. Set `BRIDGE_NTFY_TOPIC=cursor-bridge-<random>` in the `env` block of the `cursor-chat-bridge`
+   entry in `~/.cursor/mcp.json` (implies priority 3 unless `BRIDGE_NTFY_PRIORITY` is also set).
 
-```jsonc
-"notify": { "server": "https://ntfy.sh", "topic": "cursor-bridge-<random>", "priority": 3 }
-```
-
-   `priority` is a single 0..5 dial and the on/off switch: **0 = off (default)**, 1=min, 2=low,
-   3=normal, 4=high, 5=max. A push is sent only when `priority >= 1` **and** a `topic` is set.
-   Or via env: `BRIDGE_NTFY_TOPIC=cursor-bridge-<random>` (implies priority 3 unless
-   `BRIDGE_NTFY_PRIORITY` is also set). Pushes are skipped when the active adapter is **Telegram**,
-   which already notifies you natively.
+`priority` is a single 0..5 dial and the on/off switch: **0 = off (default)**, 1=min, 2=low,
+3=normal, 4=high, 5=max. A push is sent only when `priority >= 1` **and** a `topic` is set.
+(You *can* instead put a `notify` block in `config.json`, but env keeps secrets/toggles out of
+the config file.) Pushes are skipped when the active adapter is **Telegram** or **Discord**,
+which already notify you natively.
 
 Now every turn summary pings your phone; you still read and reply inside the GitHub issue.
 (ntfy.sh is reachable on networks that block Telegram/Pushover; you can also self-host and
@@ -181,6 +186,17 @@ point `server` at your own instance.)
 ### GitHub setup
 1. Create a private repo to act as your inbox (e.g. `cursor-bridge-inbox`).
 2. Set `owner`/`repo` and a `token` or `tokenCommand` (`gh auth token` works).
+
+### Discord setup (phone-first, works behind proxies)
+1. Create an app + **Bot** at <https://discord.com/developers/applications>, copy the **bot token**.
+2. Under **Bot**, enable the **Message Content Intent**.
+3. Invite the bot to your server (OAuth2 → URL Generator, scope `bot`) with **Manage Channels**
+   + View Channels + Send Messages + Read Message History. *Manage Channels is required* — the
+   bot creates (and deletes) a channel per session.
+4. Enable **Developer Mode** (User Settings → Advanced), right-click any channel in that server →
+   **Copy Channel ID**. That's the *anchor* (`channelId`) — it's only used to find the server and
+   category; sessions get their own fresh channels.
+5. Put `botToken` + `channelId` (optionally `allowedUserIds`) in config; set `activeAdapter: "discord"`.
 
 ### Telegram setup (if reachable from where the daemon runs)
 1. Create a bot with **@BotFather** → bot token.
@@ -215,6 +231,20 @@ Collect / do:
 - The group **chatId** and the user's numeric **user id(s)** for `allowedUserIds` (whitelist).
   Help obtain these via `getUpdates` pairing (send a message in the group, read the update).
 - Set `adapters.telegram.botToken`, `.chatId`, `.allowedUserIds`. Set `activeAdapter: "telegram"`.
+
+### Discord (phone-first, proxy-friendly)
+Explain: "A Discord **bot** opens a **dedicated channel per session** in your server; you chat
+from the Discord app (native push). Unlike Telegram, Discord's API is reachable through most
+corporate proxies."
+Collect / do:
+- A **bot token** from the Developer Portal (enable the **Message Content Intent**).
+- Invite the bot with **Manage Channels** (+ View Channels, Send Messages, Read Message History).
+  Manage Channels is required so it can create/delete a channel per session.
+- An **anchor channel id** (Developer Mode → Copy Channel ID) — used only to locate the server +
+  category. Optionally the user's Discord **user id** for `allowedUserIds`.
+- Set `adapters.discord.botToken`, `.channelId`. Set `activeAdapter: "discord"`.
+- If the daemon is behind a TLS-intercepting proxy and gets `TypeError: fetch failed`, point
+  `caCertPath` at the corporate CA bundle (PEM).
 
 ### Teams (Microsoft Graph, delegated — no bot)
 Explain: "I post as **you** via Microsoft Graph (no bot needed); a chat/channel per session.

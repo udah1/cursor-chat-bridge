@@ -19,16 +19,37 @@ Legend: [ ] open · [x] done · [~] partial/in-progress
 - [ ] **Workspace = "none"** (a Cursor window with no folder open): `BRIDGE_WORKSPACE`
   resolves empty and we fall back to `process.cwd()` of the MCP process. Session keying is
   weaker in that edge case. Low priority.
+- [ ] **stop-hook daemon self-heal** — if the daemon dies mid-wait, the hook keeps re-arming
+  (cheap) but goes blind: it never revives the daemon, so replies are missed until something
+  else (an MCP call) restarts it. Hook should detect `daemon-unreachable` and revive via the
+  same spawn path `ensureDaemon` uses. Surfaced during the cap-probe when the daemon exited.
+- [ ] **Finalize stop-hook window policy** — cap-probe showed Cursor did NOT kill windows up to
+  ~240s (never hit a real kill; the run ended when the daemon died). Decide a steady value
+  (fixed ~240s → ~15 re-arms/h vs 90s → ~40/h) or keep the growing probe. Defaults currently at
+  probe values (`WINDOW_BASE_MS=240s`, `WINDOW_STEP_MS=180s`) — revert to a sane steady value.
 - [ ] **Teams adapter is a scaffold** (`src/adapters/teams.ts`) — not usable yet. Needs Graph
   delegated auth (device-code / app registration) + implement ensureThread/send/poll.
 - [ ] **Telegram not usable behind proxies** that block `api.telegram.org`. Code is complete
   and unit-tested; needs an off-box daemon to actually run in blocked environments.
-- [x] **npm publish** — `cursor-telegram-chat@0.1.0` is live (tag `latest`, account `udah1`).
-  `npx cursor-telegram-chat@latest install` now resolves for everyone. Bump `version` before
-  the next publish (npm won't accept a re-publish of the same version).
+- [x] **npm publish** — automated via `.github/workflows/publish.yml` (OIDC trusted publishing,
+  no token). Push to `master` changing `package.json` publishes + tags. `cursor-telegram-chat`
+  is live (account `udah1`). Bump `version` to release.
 
 ## Recently fixed
 
+- [x] **Discord adapter** (`src/adapters/discord.ts`) — working. REST-polled (tunnels through
+  TLS-intercepting proxies, unlike Telegram). Creates a **channel per session** in the server
+  (anchor `channelId` → guild + category), deletes it on stop; needs the bot's **Manage
+  Channels** permission + **Message Content Intent**. Unit-tested (`test/discord.test.ts`).
+  (commits `fc73def`, `3fd1720`)
+- [x] **stop-hook re-arm loop** — survives Cursor's undocumented hook-timeout cap by waiting in
+  bounded windows and re-arming via a silent keep-alive `followup_message`, up to a 1h budget.
+  Verified live (~45min / 27 cycles in v1). (commit `5cae2d5`)
+- [x] **ntfy off by default, env-only** — removed the `notify` block from default/example config;
+  enable only via `BRIDGE_NTFY_*`. Push now skipped for Discord too (native push). (commit `3fd1720`)
+- [x] **Daemon TLS behind corporate proxy** — on a TLS-intercepting network Node's `fetch` fails
+  (`TypeError: fetch failed`) while curl works; fix is `caCertPath` (→ `NODE_EXTRA_CA_CERTS` on
+  the spawned daemon) pointing at the corporate CA bundle. Needed for Discord/GitHub at the office.
 - [x] **Cross-window conversation cross-talk**: `bridge_start` used to learn its
   `conversation_id` from the global `last-submit.json`, which every Cursor window overwrites,
   so sessions collapsed onto one thread. Now it prefers the per-workspace pointer
@@ -38,8 +59,8 @@ Legend: [ ] open · [x] done · [~] partial/in-progress
   GitHub `HTTP 422 Body cannot be blank`. Now accepts both, param named explicitly in tool
   descriptions/rule/`bridge_start` reply. (commit `e846137`)
 - [x] **ntfy notification dial**: single `priority` 0..5 (0 = off, default off); a push is sent
-  only when `priority >= 1` AND a topic is set; skipped entirely for the Telegram adapter
-  (native notifications). (commit `687c128`)
+  only when `priority >= 1` AND a topic is set; skipped for the Telegram and Discord adapters
+  (native notifications). (commits `687c128`, `3fd1720`)
 - [x] **Stale-stop**: re-activating a stopped session now resets stop state and opens a fresh
   thread instead of instantly returning `stopped`.
 - [x] **Install without clone**: `chat-bridge install` / `uninstall` copy the runtime into
