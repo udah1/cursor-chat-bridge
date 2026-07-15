@@ -1,16 +1,37 @@
 #!/usr/bin/env node
 import crypto from "node:crypto";
+import fs from "node:fs";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { daemonRequest } from "./daemonClient.js";
 import { loadConfig } from "./config.js";
-import { readMarker, writeMarker, clearMarker } from "./markers.js";
+import { readMarker, writeMarker, clearMarker, readLastSubmit, readWsPointer } from "./markers.js";
+import { checkAdapterConfig } from "./onboarding.js";
+import { LOG_PATH, ensureRuntimeDir } from "./paths.js";
 
-const CWD = process.cwd();
+// Cursor resolves ${workspaceFolder} per window; falls back to cwd if not provided.
+const WORKSPACE = process.env.BRIDGE_WORKSPACE || process.cwd();
 
-function currentSessionId(): string | null {
-  return readMarker(CWD)?.sessionId ?? null;
+// The conversation this MCP process most recently started bridge mode for. Primary key so
+// end-of-turn tool calls resolve to the right session even under multi-window concurrency.
+let activeConversationId: string | null = null;
+
+function debug(msg: string): void {
+  try {
+    ensureRuntimeDir();
+    fs.appendFileSync(LOG_PATH, `[${new Date().toISOString()}] [mcp] ${msg}\n`);
+  } catch {}
+}
+
+/** Resolve the conversation id for non-start tools: in-process cache, then workspace pointer, then last submit. */
+function resolveConversationId(): string | null {
+  if (activeConversationId) return activeConversationId;
+  const ws = readWsPointer(WORKSPACE)?.conversationId;
+  if (ws && readMarker(ws)?.active) return ws;
+  const ls = readLastSubmit()?.conversationId;
+  if (ls && readMarker(ls)?.active) return ls;
+  return null;
 }
 
 function text(s: string) {
@@ -21,9 +42,10 @@ const TOOLS = [
   {
     name: "bridge_start",
     description:
-      "Start chat-bridge mode for this session: opens a per-session thread in the configured chat channel " +
-      "(GitHub issue / Telegram topic / Teams chat) and routes end-of-turn summaries there. Call this when the " +
-      "user says 'start telegram mode' / 'start bridge mode' (in any language).",
+      "Start remote chat mode for this conversation: opens a per-conversation thread in the configured chat " +
+      "channel (GitHub issue / Telegram topic / Teams chat) and routes end-of-turn summaries there. Call this " +
+      "when the user asks to start remote chat / bridge / telegram mode (in any language). If the channel isn't " +
+      "configured, this returns setup guidance — follow it to onboard the user, then call bridge_start again.",
     inputSchema: {
       type: "object",
       properties: {
@@ -34,7 +56,7 @@ const TOOLS = [
   },
   {
     name: "bridge_send",
-    description: "Post a message (e.g. a turn summary or a question) to this session's chat thread.",
+    description: "Post a message (e.g. a turn summary or a question) to this conversation's chat thread.",
     inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
   },
   {
@@ -53,8 +75,8 @@ const TOOLS = [
       required: ["text"],
     },
   },
-  { name: "bridge_stop", description: "Stop chat-bridge mode for this session.", inputSchema: { type: "object", properties: {} } },
-  { name: "bridge_status", description: "Show chat-bridge status for this session.", inputSchema: { type: "object", properties: {} } },
+  { name: "bridge_stop", description: "Stop remote chat mode for this conversation.", inputSchema: { type: "object", properties: {} } },
+  { name: "bridge_status", description: "Show remote chat mode status for this conversation.", inputSchema: { type: "object", properties: {} } },
 ];
 
 const server = new Server({ name: "cursor-chat-bridge", version: "0.1.0" }, { capabilities: { tools: {} } });
@@ -68,42 +90,63 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 
   try {
     if (name === "bridge_start") {
-      const sessionId = currentSessionId() ?? crypto.randomUUID();
-      const title = args.title || CWD.split("/").pop() || "cursor-session";
       const adapter = args.adapter || cfg.activeAdapter;
-      const r = await daemonRequest("POST", "/register", { sessionId, title, cwd: CWD, adapter });
-      writeMarker({ sessionId, adapter, thread: r.thread?.thread ?? null, cwd: CWD, active: true, updatedAt: Date.now() });
+
+      // Onboard the user if the chosen channel isn't fully configured.
+      const check = checkAdapterConfig(adapter, cfg);
+      if (!check.ok) return text(check.guidance ?? `Adapter "${adapter}" is not configured.`);
+
+      // Learn this conversation's id from the beforeSubmit handshake (written moments ago).
+      const ls = readLastSubmit();
+      const conversationId = ls?.conversationId ?? crypto.randomUUID();
+      const workspace = process.env.BRIDGE_WORKSPACE || ls?.workspace || WORKSPACE;
+      const title = args.title || workspace.split("/").pop() || "cursor-session";
+      debug(`bridge_start workspace=${workspace} conversationId=${conversationId} adapter=${adapter}`);
+
+      const r = await daemonRequest("POST", "/register", { sessionId: conversationId, title, cwd: workspace, adapter });
+      activeConversationId = conversationId;
+      writeMarker({
+        conversationId,
+        sessionId: conversationId,
+        adapter,
+        thread: r.thread?.thread ?? null,
+        workspace,
+        active: true,
+        updatedAt: Date.now(),
+      });
       await daemonRequest("POST", "/send", {
-        sessionId,
-        text: `🟢 *chat-bridge mode on* for \`${title}\`. I'll post summaries here; reply to steer me. Say \`stop\` to end.`,
+        sessionId: conversationId,
+        text: `🟢 *remote chat mode on* for \`${title}\`. I'll post summaries here; reply to steer me. Say \`stop\` to end.`,
       }).catch(() => {});
       return text(
-        `chat-bridge mode ON via "${adapter}". Session ${sessionId}, thread ${r.thread?.thread}. ` +
-          `From now on, at the end of each turn send a summary + question with bridge_send_and_await, and act on the reply. Do not use the Options/Questions UI.`
+        `remote chat mode ON via "${adapter}". Thread ${r.thread?.thread} for conversation ${conversationId}. ` +
+          `From now on, at the end of each turn send a summary + question with bridge_send_and_await, and act on the ` +
+          `reply. Do not use the Options/Questions UI.`
       );
     }
 
-    const sessionId = currentSessionId();
-    if (!sessionId) return text("chat-bridge is not active for this session. Call bridge_start first.");
+    const conversationId = resolveConversationId();
+    if (!conversationId) return text("remote chat mode is not active for this conversation. Call bridge_start first.");
 
     if (name === "bridge_send") {
-      await daemonRequest("POST", "/send", { sessionId, text: String(args.text ?? "") });
+      await daemonRequest("POST", "/send", { sessionId: conversationId, text: String(args.text ?? "") });
       return text("sent");
     }
 
     if (name === "bridge_await" || name === "bridge_send_and_await") {
       if (name === "bridge_send_and_await") {
-        await daemonRequest("POST", "/send", { sessionId, text: String(args.text ?? "") });
+        await daemonRequest("POST", "/send", { sessionId: conversationId, text: String(args.text ?? "") });
       }
       const maxBlockMs = Math.min(Number(args.maxBlockMs ?? 50000), 55000);
       const r = await daemonRequest(
         "GET",
-        `/poll?sessionId=${encodeURIComponent(sessionId)}&waitMs=${maxBlockMs}`,
+        `/poll?sessionId=${encodeURIComponent(conversationId)}&waitMs=${maxBlockMs}`,
         undefined,
         maxBlockMs + 10000
       );
       if (r.stopped) {
-        clearMarker(CWD);
+        clearMarker(conversationId);
+        if (activeConversationId === conversationId) activeConversationId = null;
         return text(JSON.stringify({ status: "stopped", messages: r.messages ?? [] }));
       }
       if (r.messages?.length) {
@@ -114,13 +157,14 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     }
 
     if (name === "bridge_stop") {
-      await daemonRequest("POST", "/stop", { sessionId }).catch(() => {});
-      clearMarker(CWD);
-      return text("chat-bridge mode OFF for this session.");
+      await daemonRequest("POST", "/stop", { sessionId: conversationId }).catch(() => {});
+      clearMarker(conversationId);
+      if (activeConversationId === conversationId) activeConversationId = null;
+      return text("remote chat mode OFF for this conversation.");
     }
 
     if (name === "bridge_status") {
-      const s = await daemonRequest("GET", `/status?sessionId=${encodeURIComponent(sessionId)}`);
+      const s = await daemonRequest("GET", `/status?sessionId=${encodeURIComponent(conversationId)}`);
       return text(JSON.stringify(s, null, 2));
     }
 

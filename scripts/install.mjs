@@ -41,9 +41,11 @@ function writeJSON(p, obj) {
   cfg.mcpServers["cursor-chat-bridge"] = {
     command: process.execPath,
     args: [path.join(ROOT, "dist", "mcp.js")],
-    // No CA needed for GitHub/Graph (not TLS-intercepted). For off-box Telegram behind a
-    // TLS-intercepting proxy, add NODE_EXTRA_CA_CERTS or BRIDGE_CA_CERT here.
-    env: {},
+    // BRIDGE_WORKSPACE lets the MCP key sessions per Cursor window (Cursor resolves
+    // ${workspaceFolder} to the open project root). No CA needed for GitHub/Graph (not
+    // TLS-intercepted); for off-box Telegram behind a TLS-intercepting proxy add
+    // NODE_EXTRA_CA_CERTS or BRIDGE_CA_CERT here.
+    env: { BRIDGE_WORKSPACE: "${workspaceFolder}" },
   };
   writeJSON(MCP_JSON, cfg);
   console.log("✔ registered MCP server 'cursor-chat-bridge'");
@@ -80,4 +82,4 @@ function writeJSON(p, obj) {
 }
 
 console.log("\nDone. Reload Cursor (or restart) to load the MCP server + hooks.");
-console.log("Then: `chat-bridge doctor` to validate, and say 'start telegram mode' in a chat.");
+console.log("Then: `chat-bridge doctor` to validate, and say 'start remote chat mode' in a chat.");

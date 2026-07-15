@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 // cursor-chat-bridge `stop` hook.
-// When bridge mode is active for this session, block waiting for the remote user's
-// reply and re-inject it as `followup_message` so the agent auto-continues. When
+// When remote chat mode is active for THIS conversation, block waiting for the remote
+// user's reply and re-inject it as `followup_message` so the agent auto-continues. Keyed
+// strictly by Cursor's conversation_id (from stdin) — no cross-conversation fallback. When
 // inactive, this is a pure no-op (zero impact on normal Cursor usage).
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
-import crypto from "node:crypto";
 
 const RUNTIME = path.join(os.homedir(), ".cursor", "chat-bridge");
 const MARKERS = path.join(RUNTIME, "markers");
+const CONV_DIR = path.join(MARKERS, "conv");
 const DAEMON_FILE = path.join(RUNTIME, "daemon.json");
 const DEBUG_LOG = path.join(RUNTIME, "hook-stdin.log");
 const EXPECT_INJECTION = path.join(RUNTIME, "expect-injection");
@@ -30,27 +31,9 @@ function readJSON(p) {
     return null;
   }
 }
-function readMarker(cwd) {
-  // Prefer the exact per-cwd marker (mirrors src/markers.ts hashing); fall back to
-  // latest.json, which points at the most recently started session (the common case).
-  if (cwd) {
-    const key = crypto.createHash("sha1").update(cwd).digest("hex").slice(0, 16);
-    const byCwd = readJSON(path.join(MARKERS, `${key}.json`));
-    if (byCwd) return byCwd;
-  }
-  return readJSON(path.join(MARKERS, "latest.json"));
-}
-
-// Resolve the workspace path from hook stdin (schema not fully documented; try common keys).
-function resolveCwd(payload) {
-  if (!payload) return process.cwd();
-  return (
-    (Array.isArray(payload.workspace_roots) && payload.workspace_roots[0]) ||
-    payload.workspaceRoot ||
-    payload.cwd ||
-    payload.workspace ||
-    process.cwd()
-  );
+function readConvMarker(conversationId) {
+  if (!conversationId) return null;
+  return readJSON(path.join(CONV_DIR, `${conversationId}.json`));
 }
 
 function daemonCall(method, pathname, body, timeoutMs) {
@@ -99,23 +82,18 @@ async function main() {
     payload = JSON.parse(raw);
   } catch {}
 
-  const marker = readMarker(resolveCwd(payload));
+  const conversationId = payload?.conversation_id;
+  const marker = readConvMarker(conversationId);
   if (!marker || !marker.active) {
-    process.exit(0); // not in bridge mode -> do nothing
+    process.exit(0); // not in remote chat mode for this conversation -> do nothing
   }
   const sessionId = marker.sessionId;
 
   const started = Date.now();
   while (Date.now() - started < MAX_BLOCK_MS) {
-    const r = await daemonCall(
-      "GET",
-      `/poll?sessionId=${encodeURIComponent(sessionId)}&waitMs=50000`,
-      null,
-      60000
-    );
+    const r = await daemonCall("GET", `/poll?sessionId=${encodeURIComponent(sessionId)}&waitMs=50000`, null, 60000);
     if (!r) {
-      // daemon unreachable -> fail open (let the agent stop normally)
-      process.exit(0);
+      process.exit(0); // daemon unreachable -> fail open (let the agent stop normally)
     }
     if (r.stopped) {
       process.exit(0); // session ended -> stop the agent
@@ -124,7 +102,7 @@ async function main() {
       const replyText = r.messages.map((m) => m.text).join("\n");
       // Signal the before-submit hook that the upcoming prompt is an injection, not a real user send.
       try {
-        fs.writeFileSync(EXPECT_INJECTION, JSON.stringify({ sessionId, at: Date.now() }));
+        fs.writeFileSync(EXPECT_INJECTION, JSON.stringify({ conversationId, at: Date.now() }));
       } catch {}
       const envelope =
         `[chat-bridge] The remote user replied via ${marker.adapter}. Treat the text below as ` +
@@ -135,8 +113,7 @@ async function main() {
     }
     // no reply yet -> loop and poll again
   }
-  // Timed out waiting -> let the agent stop; user can resume later.
-  process.exit(0);
+  process.exit(0); // timed out waiting -> let the agent stop; user can resume later
 }
 
 main();

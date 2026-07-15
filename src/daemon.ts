@@ -122,11 +122,27 @@ export class Daemon {
     const adapter = await this.getAdapter(adapterName);
 
     let rec = this.store.get(sessionId);
-    if (rec && rec.thread && rec.adapter === adapterName) {
-      rec = this.store.upsert(sessionId, { title, cwd: cwd ?? rec.cwd, adapter: adapterName, active: true, thread: rec.thread });
+    if (rec && rec.thread && rec.adapter === adapterName && rec.active && !rec.stopRequested) {
+      // Re-register of a still-live session (e.g. after a daemon restart): keep the thread.
+      rec = this.store.upsert(sessionId, {
+        title,
+        cwd: cwd ?? rec.cwd,
+        adapter: adapterName,
+        active: true,
+        stopRequested: false,
+        thread: rec.thread,
+      });
     } else {
+      // New session, or re-activation of a previously stopped one -> fresh thread and clean stop state.
       const thread = await adapter.ensureThread(sessionId, title, { cwd });
-      rec = this.store.upsert(sessionId, { title, cwd: cwd ?? "", adapter: adapterName, thread, active: true });
+      rec = this.store.upsert(sessionId, {
+        title,
+        cwd: cwd ?? "",
+        adapter: adapterName,
+        thread,
+        active: true,
+        stopRequested: false,
+      });
       this.threadToSession.set(`${adapterName}:${thread.thread}`, sessionId);
     }
     return this.send(res, 200, { ok: true, thread: rec.thread, generation: rec.generation, adapter: adapterName });

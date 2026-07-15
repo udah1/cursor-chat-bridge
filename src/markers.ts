@@ -3,48 +3,88 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { MARKERS_DIR, ensureRuntimeDir } from "./paths.js";
 
+/**
+ * Sessions are keyed by Cursor's `conversation_id` (stable per chat, delivered to hooks).
+ * The MCP process cannot see the conversation id directly, so it learns it via a handshake:
+ * the beforeSubmitPrompt hook records the current {conversationId, workspace} just before the
+ * agent runs. Layout under ~/.cursor/chat-bridge/markers:
+ *   conv/<conversationId>.json  -> Marker (the session for a conversation)
+ *   ws/<hash(workspace)>.json   -> { conversationId } (active conversation per workspace)
+ *   last-submit.json            -> { conversationId, workspace } (most recent prompt submit)
+ */
 export interface Marker {
+  conversationId: string;
   sessionId: string;
   adapter: string;
   thread: string | null;
-  cwd: string;
+  workspace: string;
   active: boolean;
   updatedAt: number;
 }
 
-export function markerKey(cwd: string): string {
-  return crypto.createHash("sha1").update(cwd).digest("hex").slice(0, 16);
+export interface SubmitContext {
+  conversationId: string;
+  workspace: string | null;
+  at: number;
 }
 
-function markerPath(cwd: string): string {
-  return path.join(MARKERS_DIR, `${markerKey(cwd)}.json`);
+const CONV_DIR = path.join(MARKERS_DIR, "conv");
+const WS_DIR = path.join(MARKERS_DIR, "ws");
+const LAST_SUBMIT = path.join(MARKERS_DIR, "last-submit.json");
+
+export function wsHash(workspace: string): string {
+  return crypto.createHash("sha1").update(workspace).digest("hex").slice(0, 16);
 }
 
-const LATEST = () => path.join(MARKERS_DIR, "latest.json");
-
-export function writeMarker(m: Marker): void {
+function ensureDirs(): void {
   ensureRuntimeDir();
-  const data = JSON.stringify(m, null, 2);
-  fs.writeFileSync(markerPath(m.cwd), data);
-  fs.writeFileSync(LATEST(), data);
+  fs.mkdirSync(CONV_DIR, { recursive: true });
+  fs.mkdirSync(WS_DIR, { recursive: true });
 }
 
-export function readMarker(cwd: string): Marker | null {
+function readJSON<T>(p: string): T | null {
   try {
-    return JSON.parse(fs.readFileSync(markerPath(cwd), "utf8"));
+    return JSON.parse(fs.readFileSync(p, "utf8")) as T;
   } catch {
-    try {
-      return JSON.parse(fs.readFileSync(LATEST(), "utf8"));
-    } catch {
-      return null;
-    }
+    return null;
   }
 }
 
-export function clearMarker(cwd: string): void {
-  const active = readMarker(cwd);
-  if (active) writeMarker({ ...active, active: false, updatedAt: Date.now() });
+export function writeMarker(m: Marker): void {
+  ensureDirs();
+  fs.writeFileSync(path.join(CONV_DIR, `${m.conversationId}.json`), JSON.stringify(m, null, 2));
+  if (m.workspace) {
+    fs.writeFileSync(
+      path.join(WS_DIR, `${wsHash(m.workspace)}.json`),
+      JSON.stringify({ conversationId: m.conversationId, at: Date.now() }, null, 2)
+    );
+  }
+}
+
+export function readMarker(conversationId: string): Marker | null {
+  if (!conversationId) return null;
+  return readJSON<Marker>(path.join(CONV_DIR, `${conversationId}.json`));
+}
+
+export function clearMarker(conversationId: string): void {
+  if (!conversationId) return;
+  const p = path.join(CONV_DIR, `${conversationId}.json`);
+  const m = readJSON<Marker>(p);
+  if (m) {
+    try {
+      fs.writeFileSync(p, JSON.stringify({ ...m, active: false, updatedAt: Date.now() }, null, 2));
+    } catch {}
+  }
   try {
-    fs.rmSync(markerPath(cwd), { force: true });
+    fs.rmSync(p, { force: true });
   } catch {}
+}
+
+export function readLastSubmit(): SubmitContext | null {
+  return readJSON<SubmitContext>(LAST_SUBMIT);
+}
+
+export function readWsPointer(workspace: string): { conversationId: string } | null {
+  if (!workspace) return null;
+  return readJSON<{ conversationId: string }>(path.join(WS_DIR, `${wsHash(workspace)}.json`));
 }
