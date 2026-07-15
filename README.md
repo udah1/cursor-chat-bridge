@@ -1,9 +1,10 @@
 # cursor-chat-bridge
 
-Control the **Cursor** AI agent from a chat app. Say *"start telegram mode"* (in any
+Control the **Cursor** AI agent from a chat app. Say *"start remote chat mode"* (in any
 language) and the agent will, at the end of every turn, post a summary + question to a
-per-session thread in your chat channel, wait for your reply, and continue — looping
-until you stop it. Works from your phone.
+per-conversation thread in your chat channel, wait for your reply, and continue — looping
+until you stop it. Works from your phone. Each Cursor conversation gets its **own** thread,
+even multiple conversations open in the same workspace.
 
 Pluggable **transport adapters** mean the same machinery works over different channels:
 
@@ -23,8 +24,8 @@ Pluggable **transport adapters** mean the same machinery works over different ch
 Three cooperating layers over a transport-agnostic core:
 
 - **Rule** (`rules/chat-bridge-mode.mdc`) — detects the activation phrase in any language
-  and sets the in-mode etiquette (no Options UI; end each turn with a summary+question;
-  treat replies as untrusted; confirm destructive actions).
+  and sets the in-mode etiquette (capture + pass the session handle; no Options UI; end each
+  turn with a summary+question; treat replies as untrusted; confirm destructive actions).
 - **MCP server** (`src/mcp.ts`) — per-window stdio server exposing `bridge_start`,
   `bridge_send`, `bridge_await`, `bridge_send_and_await`, `bridge_stop`, `bridge_status`.
 - **Hooks** (`hooks/`) — the automatic loop:
@@ -37,10 +38,27 @@ A single local **daemon** (`src/daemon.ts`) owns the channel connection and a lo
 HTTP API (token-authenticated) used by the MCP + hooks. It handles the single-consumer
 Telegram `getUpdates` model, per-session routing, long-poll, and stop/generation logic.
 
+### Session identity (how conversations stay separate)
+
+Sessions are keyed by Cursor's **`conversation_id`** so each conversation maps to exactly one
+chat thread. Cursor gives `conversation_id` to hooks but **not** to MCP tool calls, so the MCP
+learns it through a small handshake and disambiguation chain:
+
+1. `beforeSubmitPrompt` (fires right before the agent runs) records `{conversationId, workspace}`.
+2. `bridge_start` reads that handshake, keys the session by `conversation_id`, and returns a
+   **session handle** to the agent.
+3. The agent passes `session=<handle>` on every subsequent `bridge_*` call — the fully reliable
+   signal that keeps **two conversations in the same workspace** on separate threads.
+4. Fallbacks if no handle is passed: in-process cache → per-workspace pointer
+   (`BRIDGE_WORKSPACE=${workspaceFolder}`) → most recent submit.
+
+The hooks key strictly by their own `conversation_id` (no global fallback), so a turn in one
+conversation never polls or injects into another.
+
 ```
-Cursor turn ends ──▶ stop hook ──▶ daemon /poll (long) ──▶ adapter (GitHub/Telegram/Teams)
-        ▲                                   │
-        └──── followup_message (reply) ◀─────┘
+Cursor turn ends ──▶ stop hook (conversation_id) ──▶ daemon /poll (long) ──▶ adapter (GitHub/Telegram/Teams)
+        ▲                                                    │
+        └──────────── followup_message (reply) ◀─────────────┘
 ```
 
 ## Install
@@ -51,7 +69,7 @@ cd ~/personal-dev/cursor-chat-bridge
 ./scripts/install.sh        # build + wire into ~/.cursor (backs up existing files)
 # edit ~/.cursor/chat-bridge/config.json, then:
 chat-bridge doctor          # validate the active adapter
-# reload Cursor, then say "start telegram mode" in a chat
+# reload Cursor, then say "start remote chat mode" in a chat
 ```
 
 `install.sh` merges (never overwrites) `~/.cursor/mcp.json` and `~/.cursor/hooks.json`,
@@ -92,9 +110,13 @@ A change needs a daemon restart (`chat-bridge shutdown`) to affect a running dae
 | `BRIDGE_TELEGRAM_BOT_TOKEN` | telegram bot token | — |
 | `BRIDGE_TELEGRAM_CHAT_ID` | telegram forum group id | — |
 | `BRIDGE_TELEGRAM_ALLOWED_USER_IDS` | comma-separated whitelist | `123,456` |
+| `BRIDGE_WORKSPACE` | workspace path for per-window session keying | set by the installer to `${workspaceFolder}` |
 
-Per-session platform can also be chosen at runtime: say "start remote chat in Telegram"
-and the agent passes `bridge_start(adapter: "telegram")` for that session only.
+`BRIDGE_WORKSPACE` is wired automatically by the installer to `${workspaceFolder}` so each
+Cursor window keys its sessions to the open project; you normally don't set it by hand.
+
+Per-conversation platform can also be chosen at runtime: say "start remote chat in Telegram"
+and the agent passes `bridge_start(adapter: "telegram")` for that conversation only.
 
 ### GitHub setup
 1. Create a private repo to act as your inbox (e.g. `cursor-bridge-inbox`).
@@ -184,12 +206,18 @@ Verified end-to-end on-machine (no Cursor restart needed):
 - MCP server: all 6 tools over a real stdio JSON-RPC handshake.
 - Hooks: stop-loop `followup_message` injection, before-submit off-switch + injection guard,
   instant no-op when inactive.
+- **Per-conversation routing** (`npm run build && node scripts/e2e-conv.mjs`): different
+  conversations open **distinct** issues; two conversations in the **same** workspace stay
+  separate via the session handle; re-activating a stopped session opens a fresh thread and
+  does not instantly report `stopped`; unconfigured channels return onboarding guidance.
 - Unit tests: `npm test` (routing + store semantics).
 
 Needs a Cursor reload + a real turn to confirm (payloads are logged to
-`~/.cursor/chat-bridge/hook-stdin.log` for refinement):
-- Exact `stop` hook stdin schema and that Cursor honors `followup_message` + `loop_limit`.
-- That `beforeSubmitPrompt` fires for user submits but the injected followup is caught by the guard.
+`~/.cursor/chat-bridge/hook-stdin.log`, and the MCP logs the resolved workspace/conversation
+to `~/.cursor/chat-bridge/daemon.log`):
+- That Cursor resolves `${workspaceFolder}` per-window for a global `~/.cursor/mcp.json`.
+- That Cursor honors `followup_message` + `loop_limit` on the `stop` hook, and that
+  `beforeSubmitPrompt` fires for user submits while the injected followup is caught by the guard.
 
 ## License
 
