@@ -42,58 +42,58 @@ looping until you stop it. Step away from the keyboard; keep shipping from your 
 
 ## Table of contents
 
-- [Why](#-why)
-- [Features](#-features)
-- [Channels at a glance](#-channels-at-a-glance)
-- [Quick start](#-quick-start)
-- [How it works](#-how-it-works)
-- [Image attachments](#️-image-attachments)
-- [Voice messages (speech-to-text)](#️-voice-messages-speech-to-text)
-- [Configuration](#-configuration)
-- [Environment overrides](#-environment-overrides)
-- [The wait loop](#-the-wait-loop-stop-hook)
-- [Push notifications (ntfy)](#-push-notifications-ntfy)
-- [Per-platform setup](#-per-platform-setup)
-- [Writing a new adapter](#-writing-a-new-adapter)
-- [Security](#-security)
-- [Verification status](#-verification-status)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [Why](#why)
+- [Features](#features)
+- [Channels at a glance](#channels-at-a-glance)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Image attachments](#image-attachments)
+- [Voice messages (speech-to-text)](#voice-messages-speech-to-text)
+- [Configuration](#configuration)
+- [Environment overrides](#environment-overrides)
+- [The wait loop](#the-wait-loop-stop-hook)
+- [Push notifications (ntfy)](#push-notifications-ntfy)
+- [Per-platform setup](#per-platform-setup)
+- [Writing a new adapter](#writing-a-new-adapter)
+- [Security](#security)
+- [Verification status](#verification-status)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-## 💡 Why
+## Why
 
 You kick off a task in Cursor, then need to leave your desk. Normally the agent stalls the moment
 it needs a decision. **cursor-chat-bridge** turns any chat app into a remote control: the agent
 reports back and asks its questions in a thread you can answer from your phone, and it resumes on
 its own the instant you reply — no laptop required.
 
-- 🧵 **A thread per conversation.** Every Cursor chat maps to its own issue / channel / topic —
+- **A thread per conversation.** Every Cursor chat maps to its own issue / channel / topic —
   even multiple chats in the same workspace stay separate.
-- 🔁 **Hands-free loop.** Replies are re-injected automatically; you don't touch Cursor to continue.
-- 🔌 **Pluggable channels.** Telegram, Discord, and GitHub Issues today — add your own in ~100 lines.
-- 🛡️ **Safe by default.** Remote replies are treated as untrusted; destructive actions require an
+- **Hands-free loop.** Replies are re-injected automatically; you don't touch Cursor to continue.
+- **Pluggable channels.** Telegram, Discord, and GitHub Issues today — add your own in ~100 lines.
+- **Safe by default.** Remote replies are treated as untrusted; destructive actions require an
   explicit confirmation sent back through the thread.
-- 🏢 **Proxy-friendly.** GitHub and Discord tunnel through TLS-intercepting corporate proxies.
+- **Proxy-friendly.** GitHub and Discord tunnel through TLS-intercepting corporate proxies.
 
-## ✨ Features
+## Features
 
-| | |
+| Capability | What it does |
 |---|---|
-| 📱 **Phone-first** | Answer the agent from the GitHub / Discord / Telegram mobile app, with native push. |
-| 🤖 **Auto-resume** | A `stop` hook waits for your reply and re-injects it as a `followup_message`. |
-| 🧵 **Per-session isolation** | Keyed by Cursor's `conversation_id`; no cross-talk between chats. |
-| ⏱️ **Long, cheap waits** | One ~60-min blocking window per re-arm ⇒ minimal paid turns while idle. |
-| 🔕 **Off when you type** | A `beforeSubmitPrompt` hook disables the loop the moment you type in Cursor. |
-| 🔐 **Token-authed local API** | The daemon's control API is loopback-only and token-guarded. |
-| 🌐 **Optional ntfy push** | Get a phone alert even on GitHub (which never notifies you of your own posts). |
-| 🖼️ **Image attachments** | Send a photo from your phone; it's saved locally and the agent opens it with its Read tool. |
-| 🎙️ **Voice → text** | Optional speech-to-text (OpenAI or local): a voice note reaches the agent as transcribed text. |
-| 🧩 **Adapter SDK** | Implement one `TransportAdapter` interface to support any channel. |
-| ⬆️ **Update-aware** | On activation it checks npm and offers to update when a newer release is out. |
+| **Phone-first** | Answer the agent from the GitHub / Discord / Telegram mobile app, with native push. |
+| **Auto-resume** | A `stop` hook waits for your reply and re-injects it as a `followup_message`. |
+| **Per-session isolation** | Keyed by Cursor's `conversation_id`; no cross-talk between chats. |
+| **Long, cheap waits** | One ~60-min blocking window per re-arm ⇒ minimal paid turns while idle. |
+| **Off when you type** | A `beforeSubmitPrompt` hook disables the loop the moment you type in Cursor. |
+| **Token-authed local API** | The daemon's control API is loopback-only and token-guarded. |
+| **Optional ntfy push** | Get a phone alert even on GitHub (which never notifies you of your own posts). |
+| **Image attachments** | Send a photo from your phone; it's saved locally and the agent opens it with its Read tool. |
+| **Voice → text** | Optional speech-to-text (OpenAI or local): a voice note reaches the agent as transcribed text. |
+| **Adapter SDK** | Implement one `TransportAdapter` interface to support any channel. |
+| **Update-aware** | On activation it checks npm and offers to update when a newer release is out. |
 
-## 📡 Channels at a glance
+## Channels at a glance
 
 | Adapter | Status | Model | Mobile push |
 |---|---|---|---|
@@ -101,7 +101,7 @@ its own the instant you reply — no laptop required.
 | **Discord** | ✅ working | A **channel per session** via a bot (REST-polled) | ✅ native |
 | **GitHub Issues** | ✅ tested end-to-end | Issue = session, comments = chat | ✅ (GitHub app) + optional ntfy |
 
-## 🚀 Quick start
+## Quick start
 
 No clone required — one command wires everything up:
 
@@ -153,7 +153,7 @@ You'll be able to `bridge_send` / `bridge_await` manually, but the auto-continue
 the hooks that the full `install` sets up.
 </details>
 
-## 🛠 How it works
+## How it works
 
 Three cooperating layers sit over one transport-agnostic core:
 
@@ -198,7 +198,7 @@ The hooks key strictly by their own `conversation_id` (no global fallback), so a
 conversation never polls or injects into another.
 </details>
 
-## 🖼️ Image attachments
+## Image attachments
 
 Send a photo (or an image file) in the chat thread and the agent can see it:
 
@@ -212,7 +212,7 @@ Send a photo (or an image file) in the chat thread and the agent can see it:
 > `media.discordapp.net` is allowed. The Discord adapter automatically rewrites attachment URLs to
 > the `media` host, so downloads work on such networks.
 
-## 🎙️ Voice messages (speech-to-text)
+## Voice messages (speech-to-text)
 
 Send a **voice note** (Telegram) or an **audio attachment** (Discord) and the agent receives a text
 transcription as if you'd typed it — **off by default**. Enable it under `stt` in the config:
@@ -234,7 +234,7 @@ transcription as if you'd typed it — **off by default**. Enable it under `stt`
 - Transcription runs **asynchronously** in the daemon (never blocks the poll window); the transcript
   is delivered on the next reply cycle. See [`docs/stt-plan.md`](docs/stt-plan.md) for the full design.
 
-## ⚙️ Configuration
+## Configuration
 
 `~/.cursor/chat-bridge/config.json`:
 
@@ -266,7 +266,7 @@ transcription as if you'd typed it — **off by default**. Enable it under `stt`
 > ntfy push is **off by default** and isn't part of this file — enable it only via `BRIDGE_NTFY_*`
 > env vars (see below).
 
-## 🔧 Environment overrides
+## Environment overrides
 
 Set these in the `env` block of the `cursor-chat-bridge` entry in `~/.cursor/mcp.json` (or the
 shell) to override `config.json` without editing it. All namespaced `BRIDGE_*`. A change needs a
@@ -299,7 +299,7 @@ daemon restart (`chat-bridge shutdown`) to affect a running daemon.
 Per-conversation platform can also be chosen at runtime: say _"start remote chat in Telegram"_ and
 the agent passes `bridge_start(adapter: "telegram")` for that conversation only.
 
-## ⏱️ The wait loop (stop hook)
+## The wait loop (stop hook)
 
 While remote mode is active, the `stop` hook blocks at the end of each turn waiting for your reply.
 Two knobs control it:
@@ -313,7 +313,7 @@ Two knobs control it:
 
 The loop ends when you reply, type in Cursor, send `stop` in the thread, or call `bridge_stop`.
 
-## 🔔 Push notifications (ntfy)
+## Push notifications (ntfy)
 
 GitHub never notifies you about your **own** activity — and the agent posts as _you_ (self-mentions
 and self-assignment don't notify either). So to get a phone alert on the GitHub channel without a
@@ -331,7 +331,7 @@ It's **off by default**. Enable it via env on the MCP entry:
 when priority ≥ 1 **and** a topic is set. Pushes are skipped for **Telegram** and **Discord**, which
 already notify natively.
 
-## 📇 Per-platform setup
+## Per-platform setup
 
 <details>
 <summary><b>Telegram</b> — default, best chat UX</summary>
@@ -349,15 +349,21 @@ that can, or use Discord/GitHub instead.
 <details>
 <summary><b>Discord</b> — phone-first, works behind proxies</summary>
 
-1. Create an app + **Bot** at <https://discord.com/developers/applications>; copy the **bot token**.
-2. Under **Bot**, enable the **Message Content Intent**.
-3. Invite the bot (OAuth2 → URL Generator, scope `bot`) with **Manage Channels** + View Channels +
-   Send Messages + Read Message History. _Manage Channels is required_ — the bot creates (and
-   deletes) a channel per session.
-4. Enable **Developer Mode** (User Settings → Advanced), right-click any channel → **Copy Channel
-   ID**. That's the _anchor_ (`channelId`) — used only to find the server + category.
-5. Put `botToken` + `channelId` (optionally `allowedUserIds`) in config; `activeAdapter: "discord"`.
-6. Behind a TLS-intercepting proxy and getting `TypeError: fetch failed`? Point `caCertPath` at the
+1. Create a Discord **server** (or use one you own / admin) — the bot creates a channel per
+   session inside it.
+2. Create an app + **Bot** at <https://discord.com/developers/applications>. Under **Bot**, click
+   **Reset Token**, then **Copy** the revealed **bot token**.
+3. Under **Bot**, enable the **Message Content Intent**.
+4. Invite the bot: **OAuth2 → URL Generator**, scope `bot`, permissions **Manage Channels** + View
+   Channels + Send Messages + Read Message History (_Manage Channels is required_ — the bot creates
+   and deletes a channel per session). **Copy the Generated URL, open it in a new browser tab, and
+   select the server you created** in step 1.
+5. Get the _anchor_ channel id (`channelId`, used only to find the server + category): enable
+   **Developer Mode** (User Settings → Advanced), then right-click any channel → **Copy Channel ID**.
+   _Or_ — once the bot is in the server — just ask Cursor to fetch it: give Cursor the bot token and
+   it can list the server's channels and return an id.
+6. Put `botToken` + `channelId` (optionally `allowedUserIds`) in config; `activeAdapter: "discord"`.
+7. Behind a TLS-intercepting proxy and getting `TypeError: fetch failed`? Point `caCertPath` at the
    corporate CA bundle (PEM).
 </details>
 
@@ -383,7 +389,7 @@ need an explicit confirmation sent back through the thread. To stop: type in Cur
 the thread, or call `bridge_stop`.
 </details>
 
-## 🧩 Writing a new adapter
+## Writing a new adapter
 
 Implement `TransportAdapter` (`src/types.ts`) and register it in `src/adapters/index.ts`:
 
@@ -411,7 +417,7 @@ interface TransportAdapter {
 | `startIngest()` | push adapters | Start a single global stream and route updates; return a stop fn. |
 | `stop()` | optional | Clean up (e.g. Discord deletes its per-session channel). |
 
-## 🔐 Security
+## Security
 
 - The loopback control API is **token-authenticated** — only local processes with the token (the
   MCP + hooks) can drive the daemon.
@@ -421,7 +427,7 @@ interface TransportAdapter {
 - Tokens live in `~/.cursor/chat-bridge/config.json` (chmod 600) and are never committed. Prefer
   `tokenCommand` over a stored token where possible.
 
-## ✅ Verification status
+## Verification status
 
 Verified end-to-end on-machine (no Cursor restart needed):
 
@@ -435,7 +441,7 @@ Verified end-to-end on-machine (no Cursor restart needed):
   opens a fresh thread; unconfigured channels return onboarding guidance.
 - **Unit tests** — `npm test` (routing, store semantics, message filtering).
 
-## 🤝 Contributing
+## Contributing
 
 Issues and PRs welcome. Local dev:
 
@@ -449,6 +455,6 @@ npm run dev:daemon   # run the daemon from source (tsx)
 
 New channels are the easiest contribution — implement one `TransportAdapter` (see above).
 
-## 📄 License
+## License
 
 [MIT](./LICENSE)
