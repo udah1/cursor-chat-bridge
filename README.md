@@ -48,6 +48,7 @@ looping until you stop it. Step away from the keyboard; keep shipping from your 
 - [Quick start](#-quick-start)
 - [How it works](#-how-it-works)
 - [Image attachments](#️-image-attachments)
+- [Voice messages (speech-to-text)](#️-voice-messages-speech-to-text)
 - [Configuration](#-configuration)
 - [Environment overrides](#-environment-overrides)
 - [The wait loop](#-the-wait-loop-stop-hook)
@@ -88,6 +89,7 @@ its own the instant you reply — no laptop required.
 | 🔐 **Token-authed local API** | The daemon's control API is loopback-only and token-guarded. |
 | 🌐 **Optional ntfy push** | Get a phone alert even on GitHub (which never notifies you of your own posts). |
 | 🖼️ **Image attachments** | Send a photo from your phone; it's saved locally and the agent opens it with its Read tool. |
+| 🎙️ **Voice → text** | Optional speech-to-text (OpenAI or local): a voice note reaches the agent as transcribed text. |
 | 🧩 **Adapter SDK** | Implement one `TransportAdapter` interface to support any channel. |
 
 ## 📡 Channels at a glance
@@ -205,8 +207,27 @@ Send a photo (or an image file) in the chat thread and the agent can see it:
 > `media.discordapp.net` is allowed. The Discord adapter automatically rewrites attachment URLs to
 > the `media` host, so downloads work on such networks.
 
-Voice messages (speech-to-text) are **planned but not implemented** — see
-[`docs/stt-plan.md`](docs/stt-plan.md).
+## 🎙️ Voice messages (speech-to-text)
+
+Send a **voice note** (Telegram) or an **audio attachment** (Discord) and the agent receives a text
+transcription as if you'd typed it — **off by default**. Enable it under `stt` in the config:
+
+```jsonc
+"stt": {
+  "enabled": true,
+  "provider": "openai",         // "openai" (or any OpenAI-compatible endpoint via baseUrl) | "local"
+  "apiKeyCommand": "…",         // or "apiKey", or BRIDGE_STT_API_KEY
+  "language": "auto",           // auto-detect, or force "he" / "en"
+  "keepAudio": true             // set false to delete the audio after a successful transcript
+}
+```
+
+- **`local` provider** (offline, recommended for sensitive audio): set `localBin`/`localArgs` to a CLI
+  that prints the transcript to stdout (e.g. `whisper.cpp`). On a **corporate network** (`caCertPath`
+  set), the default provider automatically flips to `local` so audio isn't sent off-host unless you
+  explicitly choose a cloud provider.
+- Transcription runs **asynchronously** in the daemon (never blocks the poll window); the transcript
+  is delivered on the next reply cycle. See [`docs/stt-plan.md`](docs/stt-plan.md) for the full design.
 
 ## ⚙️ Configuration
 

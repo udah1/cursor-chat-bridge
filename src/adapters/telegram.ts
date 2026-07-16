@@ -30,6 +30,16 @@ export interface TgDocument {
   file_size?: number;
 }
 
+/** A voice note (OGG/Opus) or an audio file (music). */
+export interface TgAudio {
+  file_id: string;
+  file_unique_id?: string;
+  mime_type?: string;
+  file_size?: number;
+  duration?: number;
+  file_name?: string;
+}
+
 export interface TgUpdate {
   update_id: number;
   message?: {
@@ -40,6 +50,8 @@ export interface TgUpdate {
     caption?: string;
     photo?: TgPhotoSize[];
     document?: TgDocument;
+    voice?: TgAudio;
+    audio?: TgAudio;
     from?: { id: number };
     chat?: { id: number };
   };
@@ -72,6 +84,19 @@ export function collectTgAttachments(m: NonNullable<TgUpdate["message"]>): Inbou
       contentType: m.document.mime_type,
       size: m.document.file_size,
       ref: m.document.file_id,
+    });
+  }
+  // Voice note (OGG/Opus) or an audio file — candidates for speech-to-text.
+  const audio = m.voice || m.audio;
+  if (audio) {
+    const ext = (audio.mime_type || "").includes("mpeg") ? "mp3" : "oga";
+    out.push({
+      kind: "audio",
+      filename: audio.file_name || `voice_${audio.file_unique_id || audio.file_id}.${ext}`,
+      contentType: audio.mime_type || "audio/ogg",
+      size: audio.file_size,
+      durationSec: audio.duration,
+      ref: audio.file_id,
     });
   }
   return out;

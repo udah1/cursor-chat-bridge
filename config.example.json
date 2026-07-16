@@ -24,5 +24,19 @@
       "channelId": "",
       "allowedUserIds": []
     }
+  },
+  "stt": {
+    "enabled": false,
+    "provider": "openai",
+    "model": "whisper-1",
+    "language": "auto",
+    "apiKey": "",
+    "apiKeyCommand": "",
+    "baseUrl": "https://api.openai.com/v1",
+    "localBin": "whisper",
+    "localArgs": ["{file}", "--model", "base", "--output_format", "txt", "--language", "auto"],
+    "maxBytes": 26214400,
+    "timeoutMs": 60000,
+    "keepAudio": true
   }
 }

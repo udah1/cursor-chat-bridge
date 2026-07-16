@@ -20,6 +20,8 @@ export interface InboundAttachment {
   contentType?: string;
   /** Byte size, when known. */
   size?: number;
+  /** Duration in seconds for audio/video attachments, when known. */
+  durationSec?: number;
   /** Direct downloadable URL, when the transport exposes one (e.g. Discord CDN). */
   url?: string;
   /** Adapter-native handle to resolve the bytes when there is no direct URL (e.g. Telegram file_id). */

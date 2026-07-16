@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { execSync } from "node:child_process";
 import { CONFIG_PATH, ensureRuntimeDir } from "./paths.js";
 import type { NotifyConfig } from "./notify.js";
+import { STT_DEFAULTS, type SttConfig } from "./stt.js";
 
 export interface BridgeConfig {
   activeAdapter: string;
@@ -13,6 +14,8 @@ export interface BridgeConfig {
   adapters: Record<string, any>;
   /** Optional out-of-band push (e.g. ntfy) so you get a phone alert on each summary. */
   notify?: NotifyConfig;
+  /** Speech-to-text (voice message transcription). Disabled by default. */
+  stt?: SttConfig;
 }
 
 const DEFAULTS: BridgeConfig = {
@@ -33,7 +36,16 @@ export function loadConfig(): BridgeConfig {
     raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
   }
   const cfg: BridgeConfig = { ...DEFAULTS, ...raw, adapters: raw.adapters ?? {} };
+  // Merge STT config over defaults; remember whether the provider was chosen explicitly.
+  const providerExplicit = !!(raw.stt && (raw.stt as Partial<SttConfig>).provider);
+  cfg.stt = { ...STT_DEFAULTS, ...(raw.stt ?? {}) };
   applyEnvOverrides(cfg);
+  // On a corporate network (caCertPath set), avoid sending audio off-host by default: fall back to
+  // the local provider unless the user explicitly chose a provider (config or env).
+  const envProvider = !!process.env.BRIDGE_STT_PROVIDER;
+  if (cfg.stt.enabled && cfg.caCertPath && !providerExplicit && !envProvider && cfg.stt.provider === "openai") {
+    cfg.stt.provider = "local";
+  }
   // Enforce the 10s minimum poll floor.
   cfg.pollIntervalMs = Math.max(cfg.pollIntervalMs, cfg.minPollIntervalMs, 10000);
   return cfg;
@@ -74,6 +86,18 @@ export function applyEnvOverrides(cfg: BridgeConfig): void {
   if (e.BRIDGE_DISCORD_ALLOWED_USER_IDS) {
     dc.allowedUserIds = e.BRIDGE_DISCORD_ALLOWED_USER_IDS.split(",").map((s) => s.trim()).filter(Boolean);
   }
+
+  const stt = (cfg.stt = cfg.stt ?? { ...STT_DEFAULTS });
+  if (e.BRIDGE_STT_ENABLED) stt.enabled = /^(1|true|yes|on)$/i.test(e.BRIDGE_STT_ENABLED.trim());
+  if (e.BRIDGE_STT_PROVIDER) {
+    const p = e.BRIDGE_STT_PROVIDER.trim();
+    if (p === "openai" || p === "local") stt.provider = p;
+  }
+  if (e.BRIDGE_STT_MODEL) stt.model = e.BRIDGE_STT_MODEL.trim();
+  if (e.BRIDGE_STT_LANGUAGE) stt.language = e.BRIDGE_STT_LANGUAGE.trim();
+  if (e.BRIDGE_STT_API_KEY) stt.apiKey = e.BRIDGE_STT_API_KEY.trim();
+  if (e.BRIDGE_STT_BASE_URL) stt.baseUrl = e.BRIDGE_STT_BASE_URL.trim();
+  if (e.BRIDGE_STT_LOCAL_BIN) stt.localBin = e.BRIDGE_STT_LOCAL_BIN.trim();
 
   if (e.BRIDGE_NTFY_TOPIC || e.BRIDGE_NTFY_PRIORITY || e.BRIDGE_NTFY_SERVER) {
     cfg.notify = { ...(cfg.notify ?? {}) };

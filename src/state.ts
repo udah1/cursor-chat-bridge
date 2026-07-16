@@ -137,6 +137,9 @@ export class Store {
   setCursor(id: string, cursor: string | null): void {
     const rec = this.sessions.get(id);
     if (!rec) return;
+    if (rec.cursor === cursor) return; // no change -> avoid needless writes
     rec.cursor = cursor;
+    // Persist so a daemon restart doesn't rewind the cursor and replay already-seen messages.
+    this.persist();
   }
 }

@@ -79,6 +79,27 @@ test("routeUpdates: captures an image document even without text", () => {
   assert.equal(routed[0].msg.attachments?.[0].filename, "scan.png");
 });
 
+test("routeUpdates: captures a voice note as an audio attachment", () => {
+  const updates: TgUpdate[] = [
+    {
+      update_id: 50,
+      message: {
+        message_id: 8,
+        date: 8,
+        message_thread_id: 9,
+        from: { id: 7 },
+        voice: { file_id: "voice1", file_unique_id: "vu1", mime_type: "audio/ogg", duration: 4, file_size: 5000 },
+      },
+    },
+  ];
+  const { routed } = routeUpdates(updates, new Set(["7"]));
+  assert.equal(routed.length, 1);
+  assert.equal(routed[0].msg.text, "");
+  assert.equal(routed[0].msg.attachments?.[0].kind, "audio");
+  assert.equal(routed[0].msg.attachments?.[0].ref, "voice1");
+  assert.equal(routed[0].msg.attachments?.[0].durationSec, 4);
+});
+
 test("routeUpdates: skips non-image documents and empty messages", () => {
   const updates: TgUpdate[] = [
     {

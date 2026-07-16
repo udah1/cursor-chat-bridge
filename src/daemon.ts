@@ -6,14 +6,26 @@ import { DAEMON_FILE, MEDIA_DIR, ensureRuntimeDir } from "./paths.js";
 import { loadConfig, type BridgeConfig } from "./config.js";
 import { Store } from "./state.js";
 import { createAdapter } from "./adapters/index.js";
-import type { InboundMsg, ThreadRef, TransportAdapter } from "./types.js";
+import type { InboundAttachment, InboundMsg, ThreadRef, TransportAdapter } from "./types.js";
 import { log } from "./logger.js";
 import { pushNotify } from "./notify.js";
+import { createSttProvider, sanitizeSttError, withTimeout, type SttConfig, type SttProvider } from "./stt.js";
+
+/** Drop bracketed audio/voice notes so they aren't duplicated when we build the transcript message. */
+export function stripAudioNotes(text: string): string {
+  return text
+    .split("\n")
+    .filter((l) => !/^\[(audio|voice)\b.*\]$/.test(l.trim()))
+    .join("\n")
+    .trim();
+}
+
+const mb = (n: number) => (n / (1024 * 1024)).toFixed(1);
 
 export const DAEMON_VERSION = "0.1.0";
 const STOP_KEYWORDS = ["stop", "/stop", "עצור", "עצרי", "עצור."];
 
-function isStop(text: string): boolean {
+export function isStop(text: string): boolean {
   return STOP_KEYWORDS.includes(text.trim().toLowerCase()) || STOP_KEYWORDS.includes(text.trim());
 }
 
@@ -36,9 +48,26 @@ export class Daemon {
   private threadToSession = new Map<string, string>();
   private token = crypto.randomBytes(24).toString("hex");
   private server?: http.Server;
+  private sttProvider: SttProvider | null = null;
+  private sttResolved = false;
+  private sttInFlight = new Set<string>();
 
   constructor() {
     this.cfg = loadConfig();
+  }
+
+  /** Resolve the STT provider once (keys resolved here, not per request). */
+  private getStt(): { provider: SttProvider | null; cfg: SttConfig | undefined } {
+    if (!this.sttResolved) {
+      this.sttProvider = createSttProvider(this.cfg.stt);
+      this.sttResolved = true;
+      if (this.cfg.stt?.enabled) {
+        if (this.cfg.stt.provider === "openai") log("stt: cloud provider active — audio will be sent off-host");
+        else log(`stt: local provider active (${this.cfg.stt.localBin})`);
+        if (!this.sttProvider) log("stt: enabled but provider unusable (missing API key / config)");
+      }
+    }
+    return { provider: this.sttProvider, cfg: this.cfg.stt };
   }
 
   private async getAdapter(name: string): Promise<TransportAdapter> {
@@ -204,16 +233,23 @@ export class Daemon {
       let stopped = false;
 
       if (adapter.capabilities.globalIngest) {
+        // Inbox holds both Telegram arrivals AND out-of-band injections (async STT transcripts).
         messages = this.store.drainInbox(sessionId);
       } else if (adapter.poll) {
         const r = await adapter.poll(rec.thread, rec.cursor);
         this.store.setCursor(sessionId, r.cursor);
         stopped = r.stopped;
         messages = r.messages.filter((m) => !this.store.isOwnMessage(sessionId, m.id));
+        // Also pick up messages injected out-of-band (e.g. async STT transcripts).
+        messages = messages.concat(this.store.drainInbox(sessionId));
       }
 
       // Download any media attachments to disk and surface their local paths to the agent.
       if (messages.length > 0) await this.materializeAttachments(sessionId, adapter, messages);
+
+      // Route audio through async speech-to-text: suppress the raw audio message now; the
+      // transcript is injected as a new inbound message and delivered by a later poll iteration.
+      if (messages.length > 0) messages = this.routeSttMessages(sessionId, messages);
 
       // A stop keyword in any user message ends the session.
       if (messages.some((m) => isStop(m.text))) stopped = true;
@@ -243,6 +279,7 @@ export class Daemon {
     messages: InboundMsg[]
   ): Promise<void> {
     if (!adapter.fetchAttachment) return;
+    const sttOn = !!this.cfg.stt?.enabled;
     for (const m of messages) {
       if (!m.attachments || m.attachments.length === 0) continue;
       const notes: string[] = [];
@@ -255,10 +292,14 @@ export class Daemon {
           const file = path.join(dir, `${m.id}-${safe}`);
           fs.writeFileSync(file, buf);
           att.localPath = file;
-          notes.push(
-            `[${att.kind} attachment "${att.filename}" received — saved locally; open it with the Read tool at: ${file}]`
-          );
           log(`saved ${att.kind} attachment for session ${sessionId}: ${file} (${buf.length} bytes)`);
+          // Audio handled by the STT path (it injects a transcript) — don't add a note here.
+          if (att.kind === "audio" && sttOn) continue;
+          notes.push(
+            att.kind === "image"
+              ? `[image attachment "${att.filename}" received — saved locally; open it with the Read tool at: ${file}]`
+              : `[${att.kind} attachment "${att.filename}" received — saved locally at: ${file}]`
+          );
         } catch (e: any) {
           notes.push(`[${att.kind} attachment "${att.filename}" could not be downloaded: ${e?.message ?? e}]`);
           log(`attachment download failed for session ${sessionId}: ${e?.message ?? e}`);
@@ -266,6 +307,69 @@ export class Daemon {
       }
       if (notes.length) m.text = m.text ? `${m.text}\n\n${notes.join("\n")}` : notes.join("\n");
     }
+  }
+
+  /**
+   * Suppress messages carrying audio (so the agent never sees a raw, unreadable audio message) and
+   * kick off a background transcription per audio message. When done, the transcript is injected via
+   * `store.enqueueInbound` and delivered by a subsequent poll. Deduped by source message id.
+   */
+  private routeSttMessages(sessionId: string, messages: InboundMsg[]): InboundMsg[] {
+    const { provider, cfg } = this.getStt();
+    if (!cfg?.enabled) return messages;
+    const out: InboundMsg[] = [];
+    for (const m of messages) {
+      const audio = (m.attachments ?? []).filter((a) => a.kind === "audio" && a.localPath);
+      if (audio.length === 0) {
+        out.push(m);
+        continue;
+      }
+      if (!this.sttInFlight.has(m.id)) {
+        this.sttInFlight.add(m.id);
+        void this.transcribeAndInject(sessionId, m, audio[0], provider, cfg);
+      }
+      // suppress the raw audio message from immediate delivery
+    }
+    return out;
+  }
+
+  private async transcribeAndInject(
+    sessionId: string,
+    m: InboundMsg,
+    att: InboundAttachment,
+    provider: SttProvider | null,
+    cfg: SttConfig
+  ): Promise<void> {
+    let note: string;
+    try {
+      if (!provider) {
+        note = "[voice message received but speech-to-text is not usable — check stt.provider / API key]";
+      } else if (att.size && att.size > cfg.maxBytes) {
+        note = `[voice message too large to transcribe (${mb(att.size)}MB > ${mb(cfg.maxBytes)}MB limit)]`;
+      } else {
+        const res = await withTimeout(
+          provider.transcribe(att.localPath!, { language: cfg.language, model: cfg.model }),
+          cfg.timeoutMs,
+          "stt"
+        );
+        const t = (res.text || "").trim();
+        const lang = res.language ? ` (${res.language})` : "";
+        note = t ? `[voice transcript${lang}]: ${t}` : "[voice message received but the transcription was empty]";
+        if (t && !cfg.keepAudio) {
+          try {
+            fs.rmSync(att.localPath!, { force: true });
+          } catch {}
+        }
+      }
+    } catch (e) {
+      note = `[voice message transcription failed: ${sanitizeSttError(e)}]`;
+    }
+    const base = stripAudioNotes(m.text);
+    const text = base ? `${base}\n\n${note}` : note;
+    // A transcribed "stop" must NOT auto-end the session; the bracketed prefix ensures isStop() misses.
+    this.store.enqueueInbound(sessionId, { id: `stt-${m.id}`, text, ts: Date.now(), authorId: m.authorId });
+    this.sttInFlight.delete(m.id);
+    log(`stt: injected transcript for session ${sessionId} (src msg ${m.id})`);
   }
 
   private async stop(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
