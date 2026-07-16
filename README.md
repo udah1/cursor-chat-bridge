@@ -1,8 +1,8 @@
 <div align="center">
 
-# 🌉 cursor-chat-bridge
+# 🌉 cursor-chat-bridge <sub><sup>(Telegram, Discord, GitHub)</sup></sub>
 
-### Drive the **Cursor** agent from your phone — over GitHub, Discord, or Telegram.
+### Drive the **Cursor** agent from your phone — over Telegram, Discord, or GitHub.
 
 Say _"start remote chat mode"_ (in any language) and Cursor posts a summary + question to a
 per-conversation thread at the end of every turn, waits for your reply, and **auto-continues** —
@@ -70,7 +70,7 @@ its own the instant you reply — no laptop required.
 - 🧵 **A thread per conversation.** Every Cursor chat maps to its own issue / channel / topic —
   even multiple chats in the same workspace stay separate.
 - 🔁 **Hands-free loop.** Replies are re-injected automatically; you don't touch Cursor to continue.
-- 🔌 **Pluggable channels.** GitHub Issues, Discord, and Telegram today — add your own in ~100 lines.
+- 🔌 **Pluggable channels.** Telegram, Discord, and GitHub Issues today — add your own in ~100 lines.
 - 🛡️ **Safe by default.** Remote replies are treated as untrusted; destructive actions require an
   explicit confirmation sent back through the thread.
 - 🏢 **Proxy-friendly.** GitHub and Discord tunnel through TLS-intercepting corporate proxies.
@@ -90,16 +90,11 @@ its own the instant you reply — no laptop required.
 
 ## 📡 Channels at a glance
 
-| Adapter | Status | Model | Mobile push | Behind corp proxy |
-|---|---|---|---|---|
-| **GitHub Issues** _(default)_ | ✅ tested end-to-end | Issue = session, comments = chat | ✅ (GitHub app) + optional ntfy | ✅ |
-| **Discord** | ✅ working | A **channel per session** via a bot (REST-polled) | ✅ native | ✅ |
-| **Telegram** | ✅ code complete, unit-tested | A **forum topic per session** via a bot | ✅ native | ⚠️ `api.telegram.org` is often blocked |
-
-> **Why GitHub by default?** It's reachable on virtually every network and ships a great mobile
-> app. **Discord** is the best phone-first option that also works behind corporate proxies.
-> **Telegram** has the nicest chat UX but its API is blocked on many corporate networks — run the
-> daemon somewhere that can reach `api.telegram.org` if you need it.
+| Adapter | Status | Model | Mobile push |
+|---|---|---|---|
+| **Telegram** _(default)_ | ✅ code complete, unit-tested | A **forum topic per session** via a bot | ✅ native |
+| **Discord** | ✅ working | A **channel per session** via a bot (REST-polled) | ✅ native |
+| **GitHub Issues** | ✅ tested end-to-end | Issue = session, comments = chat | ✅ (GitHub app) + optional ntfy |
 
 ## 🚀 Quick start
 
@@ -200,7 +195,7 @@ conversation never polls or injects into another.
 
 ```jsonc
 {
-  "activeAdapter": "github",
+  "activeAdapter": "telegram",
   "pollIntervalMs": 60000,     // how often to check for replies (min 10000)
   "minPollIntervalMs": 10000,
   "stopBudgetMin": 60,         // minutes to keep waiting for a reply; RESETS on every reply
@@ -286,14 +281,16 @@ already notify natively.
 ## 📇 Per-platform setup
 
 <details>
-<summary><b>GitHub</b> — recommended, works on any network</summary>
+<summary><b>Telegram</b> — default, best chat UX</summary>
 
-1. Create a private repo to act as your inbox (e.g. `cursor-bridge-inbox`).
-2. Set `owner`/`repo` and a `token` or `tokenCommand` (`gh auth token` works).
-3. `activeAdapter: "github"`.
+1. Create a bot with **@BotFather** → bot token.
+2. Create a group, enable **Topics**, add the bot as admin with _Manage Topics_.
+3. Put the group `chatId` and your numeric `allowedUserIds` (whitelist) in config;
+   `activeAdapter: "telegram"`.
 
-Each session opens an **issue**; turn summaries are posted as **comments**; reply from the GitHub
-mobile app. Comment `stop` or close the issue to end the session.
+Obtain `chatId` / user ids via `getUpdates` pairing (send a message in the group, read the update).
+Requires the daemon to reach `api.telegram.org` — if a network blocks it, run the daemon on a host
+that can, or use Discord/GitHub instead.
 </details>
 
 <details>
@@ -312,15 +309,14 @@ mobile app. Comment `stop` or close the issue to end the session.
 </details>
 
 <details>
-<summary><b>Telegram</b> — best chat UX, but network-sensitive</summary>
+<summary><b>GitHub</b> — works on any network</summary>
 
-1. Create a bot with **@BotFather** → bot token.
-2. Create a group, enable **Topics**, add the bot as admin with _Manage Topics_.
-3. Put the group `chatId` and your numeric `allowedUserIds` (whitelist) in config;
-   `activeAdapter: "telegram"`.
+1. Create a private repo to act as your inbox (e.g. `cursor-bridge-inbox`).
+2. Set `owner`/`repo` and a `token` or `tokenCommand` (`gh auth token` works).
+3. `activeAdapter: "github"`.
 
-Only works where the daemon can reach `api.telegram.org`. Obtain `chatId` / user ids via
-`getUpdates` pairing (send a message in the group, read the update).
+Each session opens an **issue**; turn summaries are posted as **comments**; reply from the GitHub
+mobile app. Comment `stop` or close the issue to end the session.
 </details>
 
 <details>
