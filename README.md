@@ -18,6 +18,21 @@ looping until you stop it. Step away from the keyboard; keep shipping from your 
 
 <img src="docs/architecture.svg" alt="cursor-chat-bridge round-trip flow" width="760">
 
+<br/>
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screenshot-channels.png" alt="A channel per session in the chat app" width="280"><br/>
+      <sub><b>A channel per session</b> — one per Cursor conversation</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screenshot-session.png" alt="The agent posts summaries you reply to from your phone" width="280"><br/>
+      <sub><b>Reply from your phone</b> — the agent picks up where it left off</sub>
+    </td>
+  </tr>
+</table>
+
 <!-- Maintainers: drop a screen recording at docs/demo.gif and uncomment the line below. -->
 <!-- ![demo](docs/demo.gif) -->
 
