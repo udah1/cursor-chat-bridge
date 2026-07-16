@@ -1,10 +1,13 @@
 import fs from "node:fs";
+import https from "node:https";
 import path from "node:path";
+import tls from "node:tls";
 import { RUNTIME_DIR } from "./paths.js";
 
 // package.json ships in the npm tarball and sits one level up from dist/version.js.
 const PKG_URL = new URL("../package.json", import.meta.url);
 const CACHE_PATH = path.join(RUNTIME_DIR, "update-check.json");
+const CONFIG_PATH = path.join(RUNTIME_DIR, "config.json");
 // Don't hammer the registry: reuse a recent result for a few hours.
 const CHECK_TTL_MS = 6 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 2500;
@@ -49,6 +52,62 @@ export interface UpdateInfo {
 }
 
 /**
+ * On a TLS-intercepting corporate network (e.g. Amdocs) the registry cert is re-signed by a private
+ * root that Node doesn't trust out of the box. Mirror the daemon's resolution order — NODE_EXTRA_CA_CERTS,
+ * BRIDGE_CA_CERT, then config.caCertPath — and return the extra CA so we can *add* it to the defaults.
+ */
+function extraCa(): Buffer | undefined {
+  const candidates = [process.env.NODE_EXTRA_CA_CERTS, process.env.BRIDGE_CA_CERT];
+  try {
+    const cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+    if (cfg && typeof cfg.caCertPath === "string" && cfg.caCertPath) candidates.push(cfg.caCertPath);
+  } catch {}
+  for (const p of candidates) {
+    if (!p) continue;
+    try {
+      const buf = fs.readFileSync(p);
+      if (buf.length) return buf;
+    } catch {}
+  }
+  return undefined;
+}
+
+/** Fetch the published "latest" version via node:https so we can add the corporate CA to trust. */
+function fetchLatestVersion(name: string): Promise<string | undefined> {
+  const ca = extraCa();
+  return new Promise((resolve) => {
+    const req = https.get(
+      `https://registry.npmjs.org/${encodeURIComponent(name)}/latest`,
+      {
+        headers: { accept: "application/json" },
+        timeout: FETCH_TIMEOUT_MS,
+        // Add the extra CA on top of the defaults (never replace them), like NODE_EXTRA_CA_CERTS.
+        ca: ca ? [...tls.rootCertificates, ca] : undefined,
+      },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          resolve(undefined);
+          return;
+        }
+        let data = "";
+        res.setEncoding("utf8");
+        res.on("data", (c) => (data += c));
+        res.on("end", () => {
+          try {
+            resolve((JSON.parse(data) as { version?: string })?.version);
+          } catch {
+            resolve(undefined);
+          }
+        });
+      }
+    );
+    req.on("timeout", () => req.destroy());
+    req.on("error", () => resolve(undefined));
+  });
+}
+
+/**
  * Best-effort check for a newer published version. Caches the result and swallows all errors
  * (offline / corporate proxy / registry down) so it never blocks or breaks bridge activation.
  */
@@ -65,17 +124,7 @@ export async function checkForUpdate(): Promise<UpdateInfo> {
 
   let latest: string | undefined;
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
-    const res = await fetch(`https://registry.npmjs.org/${encodeURIComponent(name)}/latest`, {
-      signal: ctrl.signal,
-      headers: { accept: "application/json" },
-    });
-    clearTimeout(timer);
-    if (res.ok) {
-      const body = (await res.json()) as { version?: string };
-      if (body?.version) latest = body.version;
-    }
+    latest = await fetchLatestVersion(name);
   } catch {}
 
   try {

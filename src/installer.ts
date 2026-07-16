@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -61,6 +62,43 @@ function copyDir(src: string, dest: string): void {
   }
 }
 
+/**
+ * Write a minimal ESM package.json into APP_DIR and install the package's *production* deps there.
+ * Best-effort: if npm isn't available or the network/proxy blocks it, we warn with a copy-paste
+ * fix instead of failing the whole install (the runtime is otherwise already in place).
+ */
+function installRuntimeDeps(root: string): void {
+  const rootPkg = readJSON<any>(path.join(root, "package.json"), {});
+  const dependencies = rootPkg.dependencies ?? {};
+  writeJSON(path.join(APP_DIR, "package.json"), {
+    name: "cursor-chat-bridge-runtime",
+    version: rootPkg.version ?? "0.0.0",
+    private: true,
+    type: "module",
+    dependencies,
+  });
+
+  const names = Object.keys(dependencies);
+  if (names.length === 0) return;
+
+  const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+  try {
+    execFileSync(npm, ["install", "--omit=dev", "--no-audit", "--no-fund", "--no-package-lock", "--loglevel=error"], {
+      cwd: APP_DIR,
+      stdio: "inherit",
+    });
+    console.log(`✔ installed runtime dependencies (${names.join(", ")})`);
+  } catch {
+    console.warn(
+      [
+        "⚠ could not install runtime dependencies automatically.",
+        `  Finish the install by running:  (cd ${APP_DIR} && npm install --omit=dev)`,
+        "  Behind a corporate proxy, configure npm's proxy first, then re-run the command above.",
+      ].join("\n")
+    );
+  }
+}
+
 export function runInstall(): void {
   const root = packageRoot();
   const distSrc = path.join(root, "dist");
@@ -77,6 +115,11 @@ export function runInstall(): void {
   copyDir(distSrc, path.join(APP_DIR, "dist"));
   copyDir(hooksSrc, path.join(APP_DIR, "hooks"));
   console.log(`✔ copied runtime -> ${APP_DIR}`);
+
+  // 1b. Make APP_DIR a real ESM package and install its production dependencies locally, so the
+  //     runtime resolves @modelcontextprotocol/sdk (and any future deps) on its own — even after
+  //     the npx cache it came from is evicted. Without this the copied dist can't be run directly.
+  installRuntimeDeps(root);
 
   const node = process.execPath;
   const mcpEntry = path.join(APP_DIR, "dist", "mcp.js");

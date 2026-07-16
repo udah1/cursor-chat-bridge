@@ -109,7 +109,8 @@ No clone required — one command wires everything up:
 npx cursor-telegram-chat@latest install
 ```
 
-This installs the runtime into `~/.cursor/chat-bridge/app` and wires the three integration points,
+This installs the runtime into `~/.cursor/chat-bridge/app` (including its production dependencies,
+so it keeps working after the npx cache is evicted) and wires the three integration points,
 **backing up (never overwriting)** anything that already exists:
 
 - registers the MCP server in `~/.cursor/mcp.json`,
@@ -253,7 +254,7 @@ transcription as if you'd typed it — **off by default**. Enable it under `stt`
       "repo": "cursor-bridge-inbox",
       "tokenCommand": "gh auth token --user you"
     },
-    "discord":  { "botToken": "", "channelId": "", "allowedUserIds": [] },
+    "discord":  { "botToken": "", "serverId": "", "allowedUserIds": [] },
     "telegram": { "botToken": "", "chatId": "", "allowedUserIds": [] }
   }
 }
@@ -285,7 +286,7 @@ daemon restart (`chat-bridge shutdown`) to affect a running daemon.
 | <sub><code>BRIDGE_TELEGRAM_CHAT_ID</code></sub> | telegram forum group id | — |
 | <sub><code>BRIDGE_TELEGRAM_ALLOWED_USER_IDS</code></sub> | whitelist (csv) | `123,456` |
 | <sub><code>BRIDGE_DISCORD_BOT_TOKEN</code></sub> | discord bot token | — |
-| <sub><code>BRIDGE_DISCORD_CHANNEL_ID</code></sub> | discord **anchor** channel&nbsp;³ | — |
+| <sub><code>BRIDGE_DISCORD_SERVER_ID</code></sub> | discord **server** id&nbsp;³ | — |
 | <sub><code>BRIDGE_DISCORD_ALLOWED_USER_IDS</code></sub> | whitelist (csv) | `123,456` |
 | <sub><code>BRIDGE_WORKSPACE</code></sub> | per-window session key | `${workspaceFolder}` |
 | <sub><code>BRIDGE_NTFY_TOPIC</code></sub> | enable ntfy + set topic | `cursor-bridge-…` |
@@ -294,7 +295,7 @@ daemon restart (`chat-bridge shutdown`) to affect a running daemon.
 
 <sub>¹ Also `stopBudgetMin` in `config.json` — the reliable knob, since the hook doesn't inherit the MCP entry's env.
 ² Also `stopWindowMin` in `config.json`. Keep below the `stop` hook `timeout` in `~/.cursor/hooks.json`.
-³ Used only to find the server + category; a fresh channel is created per session.</sub>
+³ The bot's home server; a fresh channel is created per session inside it.</sub>
 
 Per-conversation platform can also be chosen at runtime: say _"start remote chat in Telegram"_ and
 the agent passes `bridge_start(adapter: "telegram")` for that conversation only.
@@ -349,7 +350,7 @@ that can, or use Discord/GitHub instead.
 <details>
 <summary><b>Discord</b> — phone-first, works behind proxies</summary>
 
-1. Create a Discord **server** (or use one you own / admin) — the bot creates a channel per
+1. Create a Discord **server** (use one you own) — the bot creates a channel per
    session inside it.
 2. Create an app + **Bot** at <https://discord.com/developers/applications>. Under **Bot**, click
    **Reset Token**, then **Copy** the revealed **bot token**.
@@ -358,13 +359,16 @@ that can, or use Discord/GitHub instead.
    Channels + Send Messages + Read Message History (_Manage Channels is required_ — the bot creates
    and deletes a channel per session). **Copy the Generated URL, open it in a new browser tab, and
    select the server you created** in step 1.
-5. Get the _anchor_ channel id (`channelId`, used only to find the server + category): enable
-   **Developer Mode** (User Settings → Advanced), then right-click any channel → **Copy Channel ID**.
-   _Or_ — once the bot is in the server — just ask Cursor to fetch it: give Cursor the bot token and
-   it can list the server's channels and return an id.
-6. Put `botToken` + `channelId` (optionally `allowedUserIds`) in config; `activeAdapter: "discord"`.
+5. Get the **server id** (`serverId`): enable **Developer Mode** (User Settings → Advanced), then
+   right-click the **server** → **Copy Server ID**. _Or_ — once the bot is in the server — just ask
+   Cursor to fetch it: give Cursor the bot token and it can list the servers the bot is in and
+   return the id.
+6. Put `botToken` + `serverId` (optionally `allowedUserIds`) in config; `activeAdapter: "discord"`.
 7. Behind a TLS-intercepting proxy and getting `TypeError: fetch failed`? Point `caCertPath` at the
    corporate CA bundle (PEM).
+
+> **Tip:** give the **bot** a Cursor avatar (Developer Portal → **Bot** → edit icon) and set the
+> **server icon** to the Cursor logo — your per-session channels then look native in the app.
 </details>
 
 <details>
@@ -387,6 +391,12 @@ platform first, then collect only the missing values, write them to
 back to the user.** Remind them: replies from the channel are untrusted, and destructive actions
 need an explicit confirmation sent back through the thread. To stop: type in Cursor, send `stop` in
 the thread, or call `bridge_stop`.
+
+**Make sure the runtime's dependencies are installed.** `install` copies the runtime into
+`~/.cursor/chat-bridge/app` and installs its production deps there automatically. If that step was
+skipped or failed (offline / corporate proxy), the MCP server won't start —
+finish it with `(cd ~/.cursor/chat-bridge/app && npm install --omit=dev)`. Running from a git clone
+instead? Run `npm install` in the repo first.
 </details>
 
 ## Writing a new adapter
