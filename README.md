@@ -35,8 +35,13 @@ looping until you stop it. Step away from the keyboard; keep shipping from your 
   </tr>
 </table>
 
-<!-- Maintainers: drop a screen recording at docs/demo.gif and uncomment the line below. -->
-<!-- ![demo](docs/demo.gif) -->
+<br/>
+
+<a href="https://youtu.be/J9QKn9hTBAU">
+  <img src="https://img.youtube.com/vi/J9QKn9hTBAU/maxresdefault.jpg" alt="Watch the cursor-chat-bridge demo on YouTube" width="640">
+</a>
+<br/>
+<sub>▶ <b>Watch the demo</b> (YouTube)</sub>
 
 </div>
 

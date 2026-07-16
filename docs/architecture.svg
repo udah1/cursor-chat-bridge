@@ -1,8 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="920" height="430" viewBox="0 0 920 430" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" role="img" aria-label="cursor-chat-bridge round-trip flow diagram">
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="430" viewBox="0 0 960 430" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" role="img" aria-label="cursor-chat-bridge round-trip flow diagram">
   <title>cursor-chat-bridge &#8212; the round-trip loop</title>
 
   <!-- panel (keeps text readable on light & dark themes) -->
-  <rect x="1" y="1" width="918" height="428" rx="18" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
+  <rect x="1" y="1" width="958" height="428" rx="18" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -11,43 +11,51 @@
     <marker id="arrowBack" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#10b981"/>
     </marker>
+    <marker id="arrowGray" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94a3b8"/>
+    </marker>
   </defs>
 
-  <text x="460" y="40" text-anchor="middle" font-size="20" font-weight="700" fill="#0f172a">cursor-chat-bridge &#8212; the round-trip loop</text>
+  <text x="480" y="40" text-anchor="middle" font-size="20" font-weight="700" fill="#0f172a">cursor-chat-bridge &#8212; the round-trip loop</text>
 
   <!-- top arc: outbound (agent -> phone) -->
-  <path d="M 130 150 C 130 90, 790 90, 790 150" fill="none" stroke="#6366f1" stroke-width="2.5" marker-end="url(#arrow)"/>
-  <text x="460" y="85" text-anchor="middle" font-size="14" font-weight="600" fill="#6366f1">end-of-turn summary + question</text>
+  <path d="M 135 150 C 135 90, 825 90, 825 150" fill="none" stroke="#6366f1" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <text x="480" y="85" text-anchor="middle" font-size="14" font-weight="600" fill="#6366f1">end-of-turn summary + question</text>
+
+  <!-- stage connectors: the real pipeline hops (data flows both ways) -->
+  <line x1="220" y1="195" x2="280" y2="195" stroke="#94a3b8" stroke-width="2" marker-start="url(#arrowGray)" marker-end="url(#arrowGray)"/>
+  <line x1="450" y1="195" x2="510" y2="195" stroke="#94a3b8" stroke-width="2" marker-start="url(#arrowGray)" marker-end="url(#arrowGray)"/>
+  <line x1="680" y1="195" x2="740" y2="195" stroke="#94a3b8" stroke-width="2" marker-start="url(#arrowGray)" marker-end="url(#arrowGray)"/>
 
   <!-- nodes -->
   <g>
-    <rect x="45" y="150" width="170" height="90" rx="12" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
-    <text x="130" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#3730a3">Cursor agent</text>
-    <text x="130" y="212" text-anchor="middle" font-size="12" fill="#475569">stop / beforeSubmit</text>
-    <text x="130" y="228" text-anchor="middle" font-size="12" fill="#475569">hooks + MCP tools</text>
+    <rect x="50" y="150" width="170" height="90" rx="12" fill="#eef2ff" stroke="#6366f1" stroke-width="2"/>
+    <text x="135" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#3730a3">Cursor agent</text>
+    <text x="135" y="212" text-anchor="middle" font-size="12" fill="#475569">stop / beforeSubmit</text>
+    <text x="135" y="228" text-anchor="middle" font-size="12" fill="#475569">hooks + MCP tools</text>
   </g>
   <g>
-    <rect x="290" y="150" width="170" height="90" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
-    <text x="375" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Daemon</text>
-    <text x="375" y="212" text-anchor="middle" font-size="12" fill="#475569">local, loopback API</text>
-    <text x="375" y="228" text-anchor="middle" font-size="12" fill="#475569">routing + long-poll</text>
+    <rect x="280" y="150" width="170" height="90" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+    <text x="365" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Daemon</text>
+    <text x="365" y="212" text-anchor="middle" font-size="12" fill="#475569">local, loopback API</text>
+    <text x="365" y="228" text-anchor="middle" font-size="12" fill="#475569">routing + long-poll</text>
   </g>
   <g>
-    <rect x="535" y="150" width="170" height="90" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
-    <text x="620" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Adapter</text>
-    <text x="620" y="212" text-anchor="middle" font-size="12" fill="#475569">GitHub &#183; Discord</text>
-    <text x="620" y="228" text-anchor="middle" font-size="12" fill="#475569">&#183; Telegram</text>
+    <rect x="510" y="150" width="170" height="90" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/>
+    <text x="595" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#0f172a">Adapter</text>
+    <text x="595" y="212" text-anchor="middle" font-size="12" fill="#475569">GitHub &#183; Discord</text>
+    <text x="595" y="228" text-anchor="middle" font-size="12" fill="#475569">&#183; Telegram</text>
   </g>
   <g>
-    <rect x="705" y="150" width="170" height="90" rx="12" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
-    <text x="790" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#065f46">You, on your phone</text>
-    <text x="790" y="212" text-anchor="middle" font-size="12" fill="#475569">one thread /</text>
-    <text x="790" y="228" text-anchor="middle" font-size="12" fill="#475569">channel per session</text>
+    <rect x="740" y="150" width="170" height="90" rx="12" fill="#ecfdf5" stroke="#10b981" stroke-width="2"/>
+    <text x="825" y="190" text-anchor="middle" font-size="15" font-weight="700" fill="#065f46">You, on your phone</text>
+    <text x="825" y="212" text-anchor="middle" font-size="12" fill="#475569">one thread /</text>
+    <text x="825" y="228" text-anchor="middle" font-size="12" fill="#475569">channel per session</text>
   </g>
 
   <!-- bottom arc: inbound (phone -> agent) -->
-  <path d="M 790 240 C 790 340, 130 340, 130 240" fill="none" stroke="#10b981" stroke-width="2.5" marker-end="url(#arrowBack)"/>
-  <text x="460" y="360" text-anchor="middle" font-size="14" font-weight="600" fill="#059669">your reply &#8594; re-injected as followup &#8594; agent auto-continues</text>
+  <path d="M 825 240 C 825 340, 135 340, 135 240" fill="none" stroke="#10b981" stroke-width="2.5" marker-end="url(#arrowBack)"/>
+  <text x="480" y="360" text-anchor="middle" font-size="14" font-weight="600" fill="#059669">your reply &#8594; re-injected as followup &#8594; agent auto-continues</text>
 
-  <text x="460" y="405" text-anchor="middle" font-size="12" fill="#94a3b8">Loops until you stop it &#183; replies treated as untrusted &#183; destructive actions need explicit confirmation</text>
+  <text x="480" y="405" text-anchor="middle" font-size="12" fill="#94a3b8">Loops until you stop it &#183; replies treated as untrusted &#183; destructive actions need explicit confirmation</text>
 </svg>
