@@ -16,7 +16,7 @@ looping until you stop it. Step away from the keyboard; keep shipping from your 
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
 [![Made for Cursor](https://img.shields.io/badge/built%20for-Cursor-000000)](https://cursor.com)
 
-<img src="docs/architecture.svg" alt="cursor-chat-bridge round-trip flow" width="760">
+<img src="docs/architecture.png" alt="cursor-chat-bridge round-trip flow" width="760">
 
 <br/>
 
