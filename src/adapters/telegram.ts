@@ -1,6 +1,7 @@
 import type {
   AdapterCapabilities,
   IngestRouter,
+  InboundAttachment,
   InboundMsg,
   ThreadRef,
   TransportAdapter,
@@ -12,6 +13,23 @@ interface TelegramAdapterConfig {
   allowedUserIds?: (number | string)[];
 }
 
+/** One rendered size of a photo (Telegram sends an array from thumbnail to full resolution). */
+export interface TgPhotoSize {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
+
+/** A file sent as a document (e.g. an uncompressed image). */
+export interface TgDocument {
+  file_id: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+}
+
 export interface TgUpdate {
   update_id: number;
   message?: {
@@ -19,9 +37,44 @@ export interface TgUpdate {
     date: number;
     message_thread_id?: number;
     text?: string;
+    caption?: string;
+    photo?: TgPhotoSize[];
+    document?: TgDocument;
     from?: { id: number };
     chat?: { id: number };
   };
+}
+
+/**
+ * Extract image attachments from a Telegram message. Photos arrive as an array of sizes (pick the
+ * largest); uncompressed images arrive as documents with an image/* mime type. The bytes are
+ * resolved lazily via getFile (see fetchAttachment), so here we only carry the file_id as `ref`.
+ */
+export function collectTgAttachments(m: NonNullable<TgUpdate["message"]>): InboundAttachment[] {
+  const out: InboundAttachment[] = [];
+  if (Array.isArray(m.photo) && m.photo.length) {
+    const largest = m.photo.reduce((a, b) => {
+      const sa = a.file_size ?? a.width * a.height;
+      const sb = b.file_size ?? b.width * b.height;
+      return sb > sa ? b : a;
+    });
+    out.push({
+      kind: "image",
+      filename: `photo_${largest.file_unique_id}.jpg`,
+      size: largest.file_size,
+      ref: largest.file_id,
+    });
+  }
+  if (m.document && (m.document.mime_type || "").toLowerCase().startsWith("image/")) {
+    out.push({
+      kind: "image",
+      filename: m.document.file_name || `image_${m.document.file_id}.bin`,
+      contentType: m.document.mime_type,
+      size: m.document.file_size,
+      ref: m.document.file_id,
+    });
+  }
+  return out;
 }
 
 /** Human-friendly workspace name (basename of the cwd path), for the topic intro. */
@@ -43,13 +96,23 @@ export function routeUpdates(
   for (const u of updates) {
     nextOffset = u.update_id + 1;
     const m = u.message;
-    if (!m || typeof m.text !== "string") continue;
+    if (!m) continue;
     if (m.message_thread_id == null) continue; // only threaded (per-session) messages
+    const attachments = collectTgAttachments(m);
+    // A photo/document message carries its text in `caption`; plain messages use `text`.
+    const text = typeof m.text === "string" ? m.text : typeof m.caption === "string" ? m.caption : "";
+    if (!text && attachments.length === 0) continue; // nothing usable (sticker, service msg, ...)
     const fromId = m.from?.id != null ? String(m.from.id) : "";
     if (allowed.size > 0 && !allowed.has(fromId)) continue; // whitelist enforcement
     routed.push({
       thread: String(m.message_thread_id),
-      msg: { id: String(m.message_id), text: m.text, ts: m.date * 1000, authorId: fromId },
+      msg: {
+        id: String(m.message_id),
+        text,
+        ts: m.date * 1000,
+        authorId: fromId,
+        ...(attachments.length ? { attachments } : {}),
+      },
     });
   }
   return { routed, nextOffset };
@@ -150,5 +213,17 @@ export class TelegramAdapter implements TransportAdapter {
       chat_id: this.cfg.chatId,
       message_thread_id: Number(thread.thread),
     }).catch(() => {});
+  }
+
+  /** Resolve a Telegram file_id to bytes: getFile -> file_path -> download from the file API. */
+  async fetchAttachment(att: InboundAttachment): Promise<Buffer> {
+    if (!att.ref) throw new Error("telegram attachment has no file ref");
+    const file = await this.call("getFile", { file_id: att.ref });
+    const filePath = file?.file_path;
+    if (!filePath) throw new Error("telegram getFile returned no file_path");
+    const url = `https://api.telegram.org/file/bot${this.cfg.botToken}/${filePath}`;
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`telegram file download failed: HTTP ${r.status}`);
+    return Buffer.from(await r.arrayBuffer());
   }
 }

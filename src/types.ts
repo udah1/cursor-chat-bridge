@@ -10,6 +10,24 @@ export interface ThreadRef {
   meta?: Record<string, unknown>;
 }
 
+/** A media attachment (image, audio, ...) carried by an inbound message. */
+export interface InboundAttachment {
+  /** Coarse kind, derived from the MIME/content type or file extension. */
+  kind: "image" | "audio" | "video" | "file";
+  /** Original filename, when known. */
+  filename: string;
+  /** MIME type, when known. */
+  contentType?: string;
+  /** Byte size, when known. */
+  size?: number;
+  /** Direct downloadable URL, when the transport exposes one (e.g. Discord CDN). */
+  url?: string;
+  /** Adapter-native handle to resolve the bytes when there is no direct URL (e.g. Telegram file_id). */
+  ref?: string;
+  /** Absolute local path, filled in by the daemon after it downloads the bytes. */
+  localPath?: string;
+}
+
 /** A single inbound message observed in a thread. */
 export interface InboundMsg {
   /** Adapter-unique message id (used to dedupe and to filter the agent's own posts). */
@@ -19,6 +37,8 @@ export interface InboundMsg {
   ts: number;
   /** Adapter-native author id, when available (used to distinguish user vs agent). */
   authorId?: string;
+  /** Media attachments (images, etc.) sent alongside the message. */
+  attachments?: InboundAttachment[];
 }
 
 export interface PollResult {
@@ -66,6 +86,13 @@ export interface TransportAdapter {
 
   /** Signal end of a session (close issue, post goodbye...). Best-effort. */
   stop?(thread: ThreadRef): Promise<void>;
+
+  /**
+   * Fetch the raw bytes for an inbound attachment. Adapters encapsulate the transport-specific
+   * auth/host details (Discord signed CDN URLs, Telegram getFile + file download). The daemon
+   * calls this to persist attachments to disk. Optional: adapters without media support omit it.
+   */
+  fetchAttachment?(att: InboundAttachment): Promise<Buffer>;
 }
 
 export interface AdapterFactoryCtx {

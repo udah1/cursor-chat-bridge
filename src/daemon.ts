@@ -1,7 +1,8 @@
 import http from "node:http";
 import fs from "node:fs";
+import path from "node:path";
 import crypto from "node:crypto";
-import { DAEMON_FILE, ensureRuntimeDir } from "./paths.js";
+import { DAEMON_FILE, MEDIA_DIR, ensureRuntimeDir } from "./paths.js";
 import { loadConfig, type BridgeConfig } from "./config.js";
 import { Store } from "./state.js";
 import { createAdapter } from "./adapters/index.js";
@@ -211,6 +212,9 @@ export class Daemon {
         messages = r.messages.filter((m) => !this.store.isOwnMessage(sessionId, m.id));
       }
 
+      // Download any media attachments to disk and surface their local paths to the agent.
+      if (messages.length > 0) await this.materializeAttachments(sessionId, adapter, messages);
+
       // A stop keyword in any user message ends the session.
       if (messages.some((m) => isStop(m.text))) stopped = true;
 
@@ -226,6 +230,42 @@ export class Daemon {
       }
       await new Promise((r) => setTimeout(r, Math.min(interval, Math.max(0, deadline - Date.now()))));
     } while (true);
+  }
+
+  /**
+   * Download each message's attachments to `MEDIA_DIR/<session>/` and append a note to the message
+   * text pointing at the saved file, so the agent (which only ever receives text) can open the
+   * image with its Read tool. Best-effort: a failed download degrades to an inline note.
+   */
+  private async materializeAttachments(
+    sessionId: string,
+    adapter: TransportAdapter,
+    messages: InboundMsg[]
+  ): Promise<void> {
+    if (!adapter.fetchAttachment) return;
+    for (const m of messages) {
+      if (!m.attachments || m.attachments.length === 0) continue;
+      const notes: string[] = [];
+      for (const att of m.attachments) {
+        try {
+          const buf = await adapter.fetchAttachment(att);
+          const dir = path.join(MEDIA_DIR, sessionId);
+          fs.mkdirSync(dir, { recursive: true });
+          const safe = (att.filename || att.kind).replace(/[^A-Za-z0-9._-]/g, "_").slice(-80) || att.kind;
+          const file = path.join(dir, `${m.id}-${safe}`);
+          fs.writeFileSync(file, buf);
+          att.localPath = file;
+          notes.push(
+            `[${att.kind} attachment "${att.filename}" received — saved locally; open it with the Read tool at: ${file}]`
+          );
+          log(`saved ${att.kind} attachment for session ${sessionId}: ${file} (${buf.length} bytes)`);
+        } catch (e: any) {
+          notes.push(`[${att.kind} attachment "${att.filename}" could not be downloaded: ${e?.message ?? e}]`);
+          log(`attachment download failed for session ${sessionId}: ${e?.message ?? e}`);
+        }
+      }
+      if (notes.length) m.text = m.text ? `${m.text}\n\n${notes.join("\n")}` : notes.join("\n");
+    }
   }
 
   private async stop(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

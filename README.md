@@ -47,6 +47,7 @@ looping until you stop it. Step away from the keyboard; keep shipping from your 
 - [Channels at a glance](#-channels-at-a-glance)
 - [Quick start](#-quick-start)
 - [How it works](#-how-it-works)
+- [Image attachments](#️-image-attachments)
 - [Configuration](#-configuration)
 - [Environment overrides](#-environment-overrides)
 - [The wait loop](#-the-wait-loop-stop-hook)
@@ -86,6 +87,7 @@ its own the instant you reply — no laptop required.
 | 🔕 **Off when you type** | A `beforeSubmitPrompt` hook disables the loop the moment you type in Cursor. |
 | 🔐 **Token-authed local API** | The daemon's control API is loopback-only and token-guarded. |
 | 🌐 **Optional ntfy push** | Get a phone alert even on GitHub (which never notifies you of your own posts). |
+| 🖼️ **Image attachments** | Send a photo from your phone; it's saved locally and the agent opens it with its Read tool. |
 | 🧩 **Adapter SDK** | Implement one `TransportAdapter` interface to support any channel. |
 
 ## 📡 Channels at a glance
@@ -188,6 +190,23 @@ through a small handshake:
 The hooks key strictly by their own `conversation_id` (no global fallback), so a turn in one
 conversation never polls or injects into another.
 </details>
+
+## 🖼️ Image attachments
+
+Send a photo (or an image file) in the chat thread and the agent can see it:
+
+1. The adapter captures the attachment on the message (Discord `attachments`, Telegram `photo` /
+   image `document`).
+2. The daemon downloads the bytes to `~/.cursor/chat-bridge/media/<session>/` and appends a note to
+   the message text with the local path.
+3. The agent opens that path with its **Read** tool — so the image reaches the model as vision input.
+
+> **Behind a corporate TLS proxy:** Discord's `cdn.discordapp.com` is often blocked while
+> `media.discordapp.net` is allowed. The Discord adapter automatically rewrites attachment URLs to
+> the `media` host, so downloads work on such networks.
+
+Voice messages (speech-to-text) are **planned but not implemented** — see
+[`docs/stt-plan.md`](docs/stt-plan.md).
 
 ## ⚙️ Configuration
 

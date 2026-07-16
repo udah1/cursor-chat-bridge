@@ -12,6 +12,8 @@ export const LOG_PATH = path.join(RUNTIME_DIR, "daemon.log");
 export const HOOK_DEBUG_PATH = path.join(RUNTIME_DIR, "hook-stdin.log");
 /** Marker file the MCP writes so hooks (which run in a separate process) can find the session. */
 export const MARKERS_DIR = path.join(RUNTIME_DIR, "markers");
+/** Downloaded inbound attachments (images, etc.), grouped per session. */
+export const MEDIA_DIR = path.join(RUNTIME_DIR, "media");
 
 export function ensureRuntimeDir(): void {
   fs.mkdirSync(RUNTIME_DIR, { recursive: true });

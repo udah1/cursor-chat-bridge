@@ -1,8 +1,41 @@
 import { resolveSecret } from "../config.js";
-import type { AdapterCapabilities, InboundMsg, PollResult, ThreadRef, TransportAdapter } from "../types.js";
+import type {
+  AdapterCapabilities,
+  InboundAttachment,
+  InboundMsg,
+  PollResult,
+  ThreadRef,
+  TransportAdapter,
+} from "../types.js";
 
 const API = "https://discord.com/api/v10";
 const MAX_CONTENT = 2000; // Discord hard limit per message.
+
+/**
+ * TLS-intercepting corporate proxies (e.g. Amdocs/Zscaler) block `cdn.discordapp.com` but allow
+ * `media.discordapp.net` — the same bytes served from a different Discord edge. Rewriting the host
+ * lets attachment downloads succeed behind such proxies (and is harmless off-network).
+ */
+export function toMediaHost(url: string): string {
+  return url.replace("https://cdn.discordapp.com/", "https://media.discordapp.net/");
+}
+
+const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "heic", "heif", "avif"];
+const AUDIO_EXTS = ["mp3", "ogg", "oga", "wav", "m4a", "opus", "aac", "flac"];
+const VIDEO_EXTS = ["mp4", "mov", "webm", "mkv", "m4v"];
+
+/** Classify an attachment by MIME type, falling back to the filename extension. */
+export function attachmentKind(contentType?: string, filename?: string): InboundAttachment["kind"] {
+  const t = (contentType || "").toLowerCase();
+  if (t.startsWith("image/")) return "image";
+  if (t.startsWith("audio/")) return "audio";
+  if (t.startsWith("video/")) return "video";
+  const ext = (filename || "").toLowerCase().split(".").pop() || "";
+  if (IMAGE_EXTS.includes(ext)) return "image";
+  if (AUDIO_EXTS.includes(ext)) return "audio";
+  if (VIDEO_EXTS.includes(ext)) return "video";
+  return "file";
+}
 
 /** Human-friendly workspace name (basename of the cwd path), for channel descriptions. */
 function workspaceName(cwd: unknown): string {
@@ -24,12 +57,24 @@ interface DiscordAdapterConfig {
   allowedUserIds?: (number | string)[];
 }
 
+/** Raw Discord attachment shape (subset we consume). */
+export interface DiscordAttachment {
+  id: string;
+  filename: string;
+  content_type?: string;
+  size?: number;
+  url: string;
+  width?: number;
+  height?: number;
+}
+
 /** Raw Discord message shape (subset we consume). */
 export interface DiscordMessage {
   id: string;
   content: string;
   timestamp: string;
   author: { id: string; bot?: boolean };
+  attachments?: DiscordAttachment[];
 }
 
 /**
@@ -51,11 +96,20 @@ export function filterMessages(
     if (idB > maxId) maxId = idB;
     if (m.author?.bot || String(m.author?.id) === botUserId) continue; // ignore bot/own posts
     if (allowed.size > 0 && !allowed.has(String(m.author.id))) continue; // whitelist
+    const attachments: InboundAttachment[] = (m.attachments ?? []).map((a) => ({
+      kind: attachmentKind(a.content_type, a.filename),
+      filename: a.filename,
+      contentType: a.content_type,
+      size: a.size,
+      // Rewrite to the proxy-friendly host so downloads work behind corporate TLS proxies.
+      url: toMediaHost(a.url),
+    }));
     messages.push({
       id: m.id,
       text: m.content,
       ts: Date.parse(m.timestamp),
       authorId: String(m.author.id),
+      ...(attachments.length ? { attachments } : {}),
     });
   }
   const newCursor = maxId > 0n ? String(maxId) : cursor;
@@ -203,5 +257,13 @@ export class DiscordAdapter implements TransportAdapter {
   async stop(thread: ThreadRef): Promise<void> {
     // End of session -> delete the per-session channel to keep the server tidy (best-effort).
     await this.api(`/channels/${thread.thread}`, { method: "DELETE" }).catch(() => {});
+  }
+
+  /** Download attachment bytes. Discord CDN URLs are pre-signed, so no auth header is needed. */
+  async fetchAttachment(att: InboundAttachment): Promise<Buffer> {
+    if (!att.url) throw new Error("discord attachment has no url");
+    const r = await fetch(toMediaHost(att.url));
+    if (!r.ok) throw new Error(`discord attachment download failed: HTTP ${r.status}`);
+    return Buffer.from(await r.arrayBuffer());
   }
 }

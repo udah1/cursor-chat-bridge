@@ -33,3 +33,65 @@ test("routeUpdates: empty allow-list allows all", () => {
   const { routed } = routeUpdates(updates, new Set());
   assert.equal(routed.length, 1);
 });
+
+test("routeUpdates: captures a photo (largest size) with caption as text", () => {
+  const updates: TgUpdate[] = [
+    {
+      update_id: 20,
+      message: {
+        message_id: 5,
+        date: 5,
+        message_thread_id: 9,
+        caption: "check this",
+        from: { id: 7 },
+        photo: [
+          { file_id: "small", file_unique_id: "u1", width: 90, height: 90, file_size: 900 },
+          { file_id: "big", file_unique_id: "u2", width: 800, height: 800, file_size: 90000 },
+        ],
+      },
+    },
+  ];
+  const { routed } = routeUpdates(updates, new Set(["7"]));
+  assert.equal(routed.length, 1);
+  assert.equal(routed[0].msg.text, "check this");
+  assert.equal(routed[0].msg.attachments?.length, 1);
+  assert.equal(routed[0].msg.attachments?.[0].kind, "image");
+  assert.equal(routed[0].msg.attachments?.[0].ref, "big"); // largest size chosen
+});
+
+test("routeUpdates: captures an image document even without text", () => {
+  const updates: TgUpdate[] = [
+    {
+      update_id: 30,
+      message: {
+        message_id: 6,
+        date: 6,
+        message_thread_id: 9,
+        from: { id: 7 },
+        document: { file_id: "doc1", file_name: "scan.png", mime_type: "image/png", file_size: 4242 },
+      },
+    },
+  ];
+  const { routed } = routeUpdates(updates, new Set(["7"]));
+  assert.equal(routed.length, 1);
+  assert.equal(routed[0].msg.text, "");
+  assert.equal(routed[0].msg.attachments?.[0].ref, "doc1");
+  assert.equal(routed[0].msg.attachments?.[0].filename, "scan.png");
+});
+
+test("routeUpdates: skips non-image documents and empty messages", () => {
+  const updates: TgUpdate[] = [
+    {
+      update_id: 40,
+      message: {
+        message_id: 7,
+        date: 7,
+        message_thread_id: 9,
+        from: { id: 7 },
+        document: { file_id: "pdf1", file_name: "doc.pdf", mime_type: "application/pdf" },
+      },
+    },
+  ];
+  const { routed } = routeUpdates(updates, new Set(["7"]));
+  assert.equal(routed.length, 0); // no text, no image attachment
+});
