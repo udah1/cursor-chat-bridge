@@ -53,6 +53,10 @@ async function main() {
 
     case "doctor": {
       const cfg = loadConfig();
+      // Trust the corporate CA for the adapter's outbound HTTPS check (same as the daemon does).
+      if (cfg.caCertPath && !process.env.NODE_EXTRA_CA_CERTS) {
+        process.env.NODE_EXTRA_CA_CERTS = cfg.caCertPath;
+      }
       console.log(`config: ${CONFIG_PATH}`);
       console.log(`activeAdapter: ${cfg.activeAdapter}`);
       console.log(`pollIntervalMs: ${cfg.pollIntervalMs} (min ${cfg.minPollIntervalMs})`);

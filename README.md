@@ -260,9 +260,19 @@ transcription as if you'd typed it — **off by default**. Enable it under `stt`
 }
 ```
 
-> `caCertPath` is usually empty. Set it if Node's `fetch` fails with `TypeError: fetch failed`
-> while `curl` works — a tell-tale sign a corporate proxy is intercepting TLS for
-> `discord.com` / `api.github.com`.
+> **Behind a corporate TLS proxy?** Some corporate networks intercept HTTPS traffic with their own
+> root certificate. Node doesn't trust it by default, so requests fail with `TypeError: fetch failed`
+> even though `curl` works (that mismatch is the tell). Export your machine's trusted roots to a PEM
+> and point `caCertPath` (or the `BRIDGE_CA_CERT` env var) at it — `doctor`, the daemon, and the
+> update check all pick it up:
+>
+> ```bash
+> # macOS: dump the system + login trust store into one bundle
+> security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain > ~/corp-ca.pem
+> security find-certificate -a -p /Library/Keychains/System.keychain >> ~/corp-ca.pem
+> ```
+>
+> Then set `"caCertPath": "/Users/you/corp-ca.pem"` and restart the daemon (`chat-bridge shutdown`).
 >
 > ntfy push is **off by default** and isn't part of this file — enable it only via `BRIDGE_NTFY_*`
 > env vars (see below).
