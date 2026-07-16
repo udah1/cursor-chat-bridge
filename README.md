@@ -199,6 +199,23 @@ The hooks key strictly by their own `conversation_id` (no global fallback), so a
 conversation never polls or injects into another.
 </details>
 
+<details>
+<summary><b>Troubleshooting: the session stops after a few minutes</b></summary>
+
+The hands-free wait (default **60 min**) comes from the `stop` hook's re-arm loop, **not** from
+`bridge_await` (which only polls ~50s per call). Cursor kills a `stop` hook after a short,
+undocumented ceiling unless `~/.cursor/hooks.json` sets a large `timeout` — the installer sets
+`timeout: 3660`. If your session stops after a couple of minutes:
+
+1. **Using the MCP-only (lite) setup?** It has no hooks, so there's no auto-resume. Run the full
+   `npx cursor-telegram-chat@latest install`.
+2. **Fully quit and reopen Cursor** after installing — a reload doesn't always reload `hooks.json`.
+3. Confirm `~/.cursor/hooks.json` has a `stop` hook with `timeout: 3660` (re-running the latest
+   `install` fixes an older one).
+4. Still killed early on your Cursor build? Shrink each wait window so it re-arms sooner: set
+   `"stopWindowMin": 5` in `~/.cursor/chat-bridge/config.json` (the 60-min total is `stopBudgetMin`).
+</details>
+
 ## Image attachments
 
 Send a photo (or an image file) in the chat thread and the agent can see it:
@@ -254,25 +271,16 @@ transcription as if you'd typed it — **off by default**. Enable it under `stt`
       "repo": "cursor-bridge-inbox",
       "tokenCommand": "gh auth token --user you"
     },
-    "discord":  { "botToken": "", "serverId": "", "allowedUserIds": [] },
+    "discord":  { "botToken": "", "channelId": "", "allowedUserIds": [] },
     "telegram": { "botToken": "", "chatId": "", "allowedUserIds": [] }
   }
 }
 ```
 
-> **Behind a corporate TLS proxy?** Some corporate networks intercept HTTPS traffic with their own
-> root certificate. Node doesn't trust it by default, so requests fail with `TypeError: fetch failed`
-> even though `curl` works (that mismatch is the tell). Export your machine's trusted roots to a PEM
-> and point `caCertPath` (or the `BRIDGE_CA_CERT` env var) at it — `doctor`, the daemon, and the
-> update check all pick it up:
->
-> ```bash
-> # macOS: dump the system + login trust store into one bundle
-> security find-certificate -a -p /System/Library/Keychains/SystemRootCertificates.keychain > ~/corp-ca.pem
-> security find-certificate -a -p /Library/Keychains/System.keychain >> ~/corp-ca.pem
-> ```
->
-> Then set `"caCertPath": "/Users/you/corp-ca.pem"` and restart the daemon (`chat-bridge shutdown`).
+> `caCertPath` is usually empty — leave it unless things fail. Some corporate networks intercept
+> HTTPS with their own root cert that Node doesn't trust, so requests fail with `TypeError: fetch
+> failed` while `curl` works. If you hit that, point `caCertPath` (or `BRIDGE_CA_CERT`) at your
+> machine's CA bundle (PEM); `doctor`, the daemon, and the update check all honor it.
 >
 > ntfy push is **off by default** and isn't part of this file — enable it only via `BRIDGE_NTFY_*`
 > env vars (see below).
@@ -296,7 +304,7 @@ daemon restart (`chat-bridge shutdown`) to affect a running daemon.
 | <sub><code>BRIDGE_TELEGRAM_CHAT_ID</code></sub> | telegram forum group id | — |
 | <sub><code>BRIDGE_TELEGRAM_ALLOWED_USER_IDS</code></sub> | whitelist (csv) | `123,456` |
 | <sub><code>BRIDGE_DISCORD_BOT_TOKEN</code></sub> | discord bot token | — |
-| <sub><code>BRIDGE_DISCORD_SERVER_ID</code></sub> | discord **server** id&nbsp;³ | — |
+| <sub><code>BRIDGE_DISCORD_CHANNEL_ID</code></sub> | discord **channel** id&nbsp;³ | — |
 | <sub><code>BRIDGE_DISCORD_ALLOWED_USER_IDS</code></sub> | whitelist (csv) | `123,456` |
 | <sub><code>BRIDGE_WORKSPACE</code></sub> | per-window session key | `${workspaceFolder}` |
 | <sub><code>BRIDGE_NTFY_TOPIC</code></sub> | enable ntfy + set topic | `cursor-bridge-…` |
@@ -305,7 +313,7 @@ daemon restart (`chat-bridge shutdown`) to affect a running daemon.
 
 <sub>¹ Also `stopBudgetMin` in `config.json` — the reliable knob, since the hook doesn't inherit the MCP entry's env.
 ² Also `stopWindowMin` in `config.json`. Keep below the `stop` hook `timeout` in `~/.cursor/hooks.json`.
-³ The bot's home server; a fresh channel is created per session inside it.</sub>
+³ Any existing text channel in your server; used to locate the server + category — a fresh channel is created per session alongside it (For example #General).</sub>
 
 Per-conversation platform can also be chosen at runtime: say _"start remote chat in Telegram"_ and
 the agent passes `bridge_start(adapter: "telegram")` for that conversation only.
@@ -369,11 +377,12 @@ that can, or use Discord/GitHub instead.
    Channels + Send Messages + Read Message History (_Manage Channels is required_ — the bot creates
    and deletes a channel per session). **Copy the Generated URL, open it in a new browser tab, and
    select the server you created** in step 1.
-5. Get the **server id** (`serverId`): enable **Developer Mode** (User Settings → Advanced), then
-   right-click the **server** → **Copy Server ID**. _Or_ — once the bot is in the server — just ask
-   Cursor to fetch it: give Cursor the bot token and it can list the servers the bot is in and
-   return the id.
-6. Put `botToken` + `serverId` (optionally `allowedUserIds`) in config; `activeAdapter: "discord"`.
+5. Get a **channel id** (`channelId`) — any existing text channel in that server (e.g. `#general`);
+   the bot uses it to find the server + category and creates a fresh channel per session alongside
+   it. Enable **Developer Mode** (User Settings → Advanced), then right-click the **channel** →
+   **Copy Channel ID**. _Or_ — once the bot is in the server — just ask Cursor to fetch it: give
+   Cursor the bot token and it can list the bot's channels and return the id.
+6. Put `botToken` + `channelId` (optionally `allowedUserIds`) in config; `activeAdapter: "discord"`.
 7. Behind a TLS-intercepting proxy and getting `TypeError: fetch failed`? Point `caCertPath` at the
    corporate CA bundle (PEM).
 
