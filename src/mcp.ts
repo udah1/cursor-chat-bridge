@@ -9,6 +9,7 @@ import { loadConfig } from "./config.js";
 import { readMarker, writeMarker, clearMarker, readLastSubmit, readWsPointer } from "./markers.js";
 import { checkAdapterConfig } from "./onboarding.js";
 import { LOG_PATH, ensureRuntimeDir } from "./paths.js";
+import { checkForUpdate, currentVersion, packageName } from "./version.js";
 
 // Cursor resolves ${workspaceFolder} per window; falls back to cwd if not provided.
 const WORKSPACE = process.env.BRIDGE_WORKSPACE || process.cwd();
@@ -119,7 +120,7 @@ const TOOLS = [
   },
 ];
 
-const server = new Server({ name: "cursor-chat-bridge", version: "0.1.0" }, { capabilities: { tools: {} } });
+const server = new Server({ name: "cursor-chat-bridge", version: currentVersion() }, { capabilities: { tools: {} } });
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
 
@@ -135,6 +136,12 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       // Onboard the user if the chosen channel isn't fully configured.
       const check = checkAdapterConfig(adapter, cfg);
       if (!check.ok) return text(check.guidance ?? `Adapter "${adapter}" is not configured.`);
+
+      // Best-effort "is there a newer release?" check, run in parallel with registration so it
+      // doesn't add latency. Surfaced in the response for the agent to raise with the user.
+      const updatePromise = checkForUpdate().catch(
+        () => ({ current: currentVersion(), latest: undefined, updateAvailable: false })
+      );
 
       // Learn this conversation's id from the beforeSubmit handshake (written moments ago).
       // Priority matters under concurrent windows:
@@ -169,12 +176,20 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         sessionId: conversationId,
         text: `🟢 *remote chat mode on* for \`${title}\`. I'll post summaries here; reply to steer me. Say \`stop\` to end.`,
       }).catch(() => {});
+      const update = await updatePromise;
+      const updateNote = update.updateAvailable
+        ? `\n\n⬆️ UPDATE AVAILABLE: ${update.current} → ${update.latest}. Before continuing, tell the user and ask ` +
+          `(via the normal Cursor question UI — the remote loop hasn't started) whether to update now with ` +
+          `\`npx ${packageName()}@latest install\` (then reload Cursor). If they decline, continue normally.`
+        : "";
+
       return text(
         `remote chat mode ON via "${adapter}". Thread ${r.thread?.thread}. ` +
           `Your session handle is "${conversationId}". IMPORTANT: pass session="${conversationId}" to every ` +
           `subsequent bridge_* call so this conversation stays on its own thread. At the end of each turn send a ` +
           `summary + question with bridge_send_and_await (put the message in the "text" argument), act on the reply, ` +
-          `and do not use the Options/Questions UI.`
+          `and do not use the Options/Questions UI.` +
+          updateNote
       );
     }
 

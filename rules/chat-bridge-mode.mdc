@@ -31,7 +31,11 @@ On activation:
    keeps multiple conversations (even in the same workspace) on their own separate threads.
 3. If `bridge_start` returns setup guidance instead (channel not configured), follow it to
    onboard the user, then call `bridge_start` again.
-4. Confirm briefly in Cursor, then continue the actual work the user asked for.
+4. If the `bridge_start` response includes an **UPDATE AVAILABLE** note, mention it and ask the
+   user — via the normal Cursor question UI (the remote loop hasn't started yet) — whether to
+   update now with `npx cursor-telegram-chat@latest install` (then reload Cursor). If they
+   decline, just continue.
+5. Confirm briefly in Cursor, then continue the actual work the user asked for.
 
 ## Behavior while in remote chat mode
 

@@ -91,6 +91,7 @@ its own the instant you reply — no laptop required.
 | 🖼️ **Image attachments** | Send a photo from your phone; it's saved locally and the agent opens it with its Read tool. |
 | 🎙️ **Voice → text** | Optional speech-to-text (OpenAI or local): a voice note reaches the agent as transcribed text. |
 | 🧩 **Adapter SDK** | Implement one `TransportAdapter` interface to support any channel. |
+| ⬆️ **Update-aware** | On activation it checks npm and offers to update when a newer release is out. |
 
 ## 📡 Channels at a glance
 
@@ -142,7 +143,10 @@ If you only want the MCP tools via the standard Cursor MCP flow (no hands-free l
 `~/.cursor/mcp.json` instead of running `install`:
 
 ```json
-"cursor-chat-bridge": { "command": "npx", "args": ["-y", "cursor-telegram-chat", "chat-bridge-mcp"] }
+"cursor-chat-bridge": {
+  "command": "npx",
+  "args": ["-y", "cursor-telegram-chat", "chat-bridge-mcp"]
+}
 ```
 
 You'll be able to `bridge_send` / `bridge_await` manually, but the auto-continue-on-reply loop needs
@@ -169,10 +173,11 @@ token-authenticated HTTP API used by the MCP + hooks. It handles per-session rou
 own-message filtering, and stop/generation logic.
 
 ```text
-Cursor turn ends ─▶ stop hook (conversation_id) ─▶ daemon /poll (long) ─▶ adapter (GitHub/Discord/Telegram)
-      ▲                                                      │
-      └────────────── followup_message (your reply) ◀────────┘
+turn ends ─▶ stop hook ─▶ daemon /poll ─▶ adapter
+   ▲                                          │
+   └───── followup_message (your reply) ◀─────┘
 ```
+(adapter = GitHub / Discord / Telegram; keyed by `conversation_id`.)
 
 <details>
 <summary><b>Session identity — how conversations stay separate</b></summary>
@@ -215,10 +220,10 @@ transcription as if you'd typed it — **off by default**. Enable it under `stt`
 ```jsonc
 "stt": {
   "enabled": true,
-  "provider": "openai",         // "openai" (or any OpenAI-compatible endpoint via baseUrl) | "local"
-  "apiKeyCommand": "…",         // or "apiKey", or BRIDGE_STT_API_KEY
-  "language": "auto",           // auto-detect, or force "he" / "en"
-  "keepAudio": true             // set false to delete the audio after a successful transcript
+  "provider": "openai",   // "openai" (OpenAI-compatible via baseUrl) or "local"
+  "apiKeyCommand": "…",   // or "apiKey", or env BRIDGE_STT_API_KEY
+  "language": "auto",     // auto-detect, or force "he" / "en"
+  "keepAudio": true       // false = delete the audio after transcribing
 }
 ```
 
@@ -236,14 +241,18 @@ transcription as if you'd typed it — **off by default**. Enable it under `stt`
 ```jsonc
 {
   "activeAdapter": "telegram",
-  "pollIntervalMs": 60000,     // how often to check for replies (min 10000)
+  "pollIntervalMs": 60000,   // check for replies every N ms (min 10000)
   "minPollIntervalMs": 10000,
-  "stopBudgetMin": 60,         // minutes to keep waiting for a reply; RESETS on every reply
-  "stopWindowMin": 60,         // length of each blocking window before a re-arm (keep < hooks.json timeout)
-  "caCertPath": "",            // set to a corporate CA bundle (PEM) if the daemon is behind a TLS-intercepting proxy
+  "stopBudgetMin": 60,       // wait budget (mins); resets on every reply
+  "stopWindowMin": 60,       // mins per window (keep < hooks.json timeout)
+  "caCertPath": "",          // corporate CA bundle (PEM) if behind a TLS proxy
   "requireConfirmForDestructive": true,
   "adapters": {
-    "github":   { "owner": "you", "repo": "cursor-bridge-inbox", "tokenCommand": "gh auth token --user you" },
+    "github": {
+      "owner": "you",
+      "repo": "cursor-bridge-inbox",
+      "tokenCommand": "gh auth token --user you"
+    },
     "discord":  { "botToken": "", "channelId": "", "allowedUserIds": [] },
     "telegram": { "botToken": "", "chatId": "", "allowedUserIds": [] }
   }
@@ -265,23 +274,27 @@ daemon restart (`chat-bridge shutdown`) to affect a running daemon.
 
 | Env var | Overrides | Example |
 |---|---|---|
-| `BRIDGE_PLATFORM` | `activeAdapter` | `github` \| `telegram` \| `discord` |
-| `BRIDGE_POLL_INTERVAL` | poll interval, in **seconds** | `30` |
-| `BRIDGE_STOP_BUDGET_MIN` | minutes to keep waiting for a reply (resets on every reply). Also `stopBudgetMin` in `config.json` — the reliable knob, since the hook doesn't inherit the MCP entry's env | `60` |
-| `BRIDGE_STOP_WINDOW_MIN` | minutes per blocking window before a re-arm. Also `stopWindowMin` in `config.json`. Keep below the `stop` hook `timeout` in `~/.cursor/hooks.json` | `60` |
-| `BRIDGE_CA_CERT` | `caCertPath` | `/path/to/corp-ca-bundle.pem` |
-| `BRIDGE_GITHUB_REPO` | github `owner/repo` | `you/cursor-bridge-inbox` |
-| `BRIDGE_GITHUB_TOKEN` | github token | `gho_…` |
-| `BRIDGE_TELEGRAM_BOT_TOKEN` | telegram bot token | — |
-| `BRIDGE_TELEGRAM_CHAT_ID` | telegram forum group id | — |
-| `BRIDGE_TELEGRAM_ALLOWED_USER_IDS` | comma-separated whitelist | `123,456` |
-| `BRIDGE_DISCORD_BOT_TOKEN` | discord bot token | — |
-| `BRIDGE_DISCORD_CHANNEL_ID` | discord **anchor** channel id (used to find the server + category; a fresh channel is created per session) | — |
-| `BRIDGE_DISCORD_ALLOWED_USER_IDS` | comma-separated whitelist | `123,456` |
-| `BRIDGE_WORKSPACE` | workspace path for per-window session keying | set by the installer to `${workspaceFolder}` |
-| `BRIDGE_NTFY_TOPIC` | enable ntfy push + set the topic | `cursor-bridge-ab12cd…` |
-| `BRIDGE_NTFY_PRIORITY` | push priority 0..5 (0 = off) | `2` |
-| `BRIDGE_NTFY_SERVER` | ntfy server base URL | `https://ntfy.sh` (default) |
+| <sub><code>BRIDGE_PLATFORM</code></sub> | `activeAdapter` | `github` \| `telegram` \| `discord` |
+| <sub><code>BRIDGE_POLL_INTERVAL</code></sub> | poll interval (**seconds**) | `30` |
+| <sub><code>BRIDGE_STOP_BUDGET_MIN</code></sub> | wait budget, mins; resets on reply&nbsp;¹ | `60` |
+| <sub><code>BRIDGE_STOP_WINDOW_MIN</code></sub> | mins per blocking window&nbsp;² | `60` |
+| <sub><code>BRIDGE_CA_CERT</code></sub> | `caCertPath` | `/path/to/ca.pem` |
+| <sub><code>BRIDGE_GITHUB_REPO</code></sub> | github `owner/repo` | `you/inbox` |
+| <sub><code>BRIDGE_GITHUB_TOKEN</code></sub> | github token | `gho_…` |
+| <sub><code>BRIDGE_TELEGRAM_BOT_TOKEN</code></sub> | telegram bot token | — |
+| <sub><code>BRIDGE_TELEGRAM_CHAT_ID</code></sub> | telegram forum group id | — |
+| <sub><code>BRIDGE_TELEGRAM_ALLOWED_USER_IDS</code></sub> | whitelist (csv) | `123,456` |
+| <sub><code>BRIDGE_DISCORD_BOT_TOKEN</code></sub> | discord bot token | — |
+| <sub><code>BRIDGE_DISCORD_CHANNEL_ID</code></sub> | discord **anchor** channel&nbsp;³ | — |
+| <sub><code>BRIDGE_DISCORD_ALLOWED_USER_IDS</code></sub> | whitelist (csv) | `123,456` |
+| <sub><code>BRIDGE_WORKSPACE</code></sub> | per-window session key | `${workspaceFolder}` |
+| <sub><code>BRIDGE_NTFY_TOPIC</code></sub> | enable ntfy + set topic | `cursor-bridge-…` |
+| <sub><code>BRIDGE_NTFY_PRIORITY</code></sub> | push priority 0–5 (0 = off) | `2` |
+| <sub><code>BRIDGE_NTFY_SERVER</code></sub> | ntfy server base URL | `https://ntfy.sh` |
+
+<sub>¹ Also `stopBudgetMin` in `config.json` — the reliable knob, since the hook doesn't inherit the MCP entry's env.
+² Also `stopWindowMin` in `config.json`. Keep below the `stop` hook `timeout` in `~/.cursor/hooks.json`.
+³ Used only to find the server + category; a fresh channel is created per session.</sub>
 
 Per-conversation platform can also be chosen at runtime: say _"start remote chat in Telegram"_ and
 the agent passes `bridge_start(adapter: "telegram")` for that conversation only.
@@ -380,8 +393,10 @@ interface TransportAdapter {
   init(): Promise<void>;
   ensureThread(sessionId: string, title: string, meta?: object): Promise<ThreadRef>;
   send(thread: ThreadRef, text: string): Promise<{ messageId: string }>;
-  poll?(thread: ThreadRef, cursor?: string): Promise<PollResult>;   // pull adapters (GitHub/Discord)
-  startIngest?(router: Router): Promise<() => void>;                // push/global adapters (Telegram)
+  // pull adapters (GitHub / Discord):
+  poll?(thread: ThreadRef, cursor?: string): Promise<PollResult>;
+  // push / global adapters (Telegram):
+  startIngest?(router: Router): Promise<() => void>;
   stop?(thread: ThreadRef): Promise<void>;
 }
 ```
