@@ -74,16 +74,5 @@ export function checkAdapterConfig(adapter: string, cfg: BridgeConfig): ConfigCh
     };
   }
 
-  if (adapter === "teams") {
-    return {
-      ok: false,
-      guidance:
-        "Teams channel is not implemented yet (adapter is a scaffold). Explain to the user: it would post as " +
-        "them via Microsoft Graph (delegated, no bot) and needs either an Azure AD app registration " +
-        "(tenantId + clientId) or a one-time device-code sign-in, either of which the tenant may block. " +
-        "For now, recommend using the GitHub channel instead.",
-    };
-  }
-
   return { ok: true };
 }

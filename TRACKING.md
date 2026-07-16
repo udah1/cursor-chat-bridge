@@ -23,12 +23,10 @@ Legend: [ ] open · [x] done · [~] partial/in-progress
   (cheap) but goes blind: it never revives the daemon, so replies are missed until something
   else (an MCP call) restarts it. Hook should detect `daemon-unreachable` and revive via the
   same spawn path `ensureDaemon` uses. Surfaced during the cap-probe when the daemon exited.
-- [ ] **Finalize stop-hook window policy** — cap-probe showed Cursor did NOT kill windows up to
-  ~240s (never hit a real kill; the run ended when the daemon died). Decide a steady value
-  (fixed ~240s → ~15 re-arms/h vs 90s → ~40/h) or keep the growing probe. Defaults currently at
-  probe values (`WINDOW_BASE_MS=240s`, `WINDOW_STEP_MS=180s`) — revert to a sane steady value.
-- [ ] **Teams adapter is a scaffold** (`src/adapters/teams.ts`) — not usable yet. Needs Graph
-  delegated auth (device-code / app registration) + implement ensureThread/send/poll.
+- [x] **Stop-hook window policy finalized** — cap-probe showed Cursor did NOT kill windows up to
+  ~240s. Shipped default is a **fixed 240s** window (`WINDOW_BASE_MS=240s`, `WINDOW_STEP_MS=0`) →
+  ~15 re-arms/h. The growing "lion-in-the-desert" probe is still available via
+  `BRIDGE_STOP_WINDOW_BASE_MS` / `BRIDGE_STOP_WINDOW_STEP_MS` / `BRIDGE_STOP_WINDOW_MAX_MS` env vars.
 - [ ] **Telegram not usable behind proxies** that block `api.telegram.org`. Code is complete
   and unit-tested; needs an off-box daemon to actually run in blocked environments.
 - [x] **npm publish** — automated via `.github/workflows/publish.yml` (OIDC trusted publishing,

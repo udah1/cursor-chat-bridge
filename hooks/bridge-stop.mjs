@@ -44,14 +44,30 @@ function resolveBudgetMs() {
   return 60 * 60 * 1000;
 }
 const TOTAL_BUDGET_MS = resolveBudgetMs();
-// Per-invocation blocking window, GROWING per re-arm cycle to probe Cursor's hook-timeout
-// ceiling: start at BASE and add STEP each cycle (90s, 120s, 150s, ...). Each window MUST stay
-// under Cursor's cap so the hook can return and re-arm; once a window is killed we've found the
-// cap (read the last successful window from stop-hook.log). The re-arm cadence == the window, so
-// longer windows also mean fewer paid keep-alive turns.
-const WINDOW_BASE_MS = Number(process.env.BRIDGE_STOP_WINDOW_BASE_MS || 240 * 1000);
-const WINDOW_STEP_MS = Number(process.env.BRIDGE_STOP_WINDOW_STEP_MS || 180 * 1000);
-// Optional hard ceiling on the growing window (0 = unbounded, keep probing until killed).
+// Per-invocation blocking window: how long the hook blocks before returning a keep-alive
+// followup_message and re-arming. Each window must stay under Cursor's `stop`-hook timeout (see
+// `timeout` in ~/.cursor/hooks.json, default 3660s / 61min) so the hook can return and re-arm.
+// Probing showed Cursor does NOT kill windows below that configured timeout (10/15/20-min windows
+// all survived), so the default is a single ~60-min window — one re-arm per hour, i.e. the fewest
+// possible paid keep-alive turns. Configurable (first match wins):
+//   1. BRIDGE_STOP_WINDOW_MIN env (minutes)   2. BRIDGE_STOP_WINDOW_BASE_MS env (raw ms)
+//   3. "stopWindowMin" in ~/.cursor/chat-bridge/config.json (minutes)   4. default 60 min.
+// Keep this comfortably under the hooks.json `timeout`. The config.json knob is the reliable one
+// since a `stop` hook doesn't inherit the MCP entry's env.
+function resolveWindowMs() {
+  const envMin = Number(process.env.BRIDGE_STOP_WINDOW_MIN);
+  if (Number.isFinite(envMin) && envMin > 0) return envMin * 60 * 1000;
+  const envMs = Number(process.env.BRIDGE_STOP_WINDOW_BASE_MS);
+  if (Number.isFinite(envMs) && envMs > 0) return envMs;
+  const cfg = readJSON(path.join(RUNTIME, "config.json"));
+  const cfgMin = Number(cfg?.stopWindowMin);
+  if (Number.isFinite(cfgMin) && cfgMin > 0) return cfgMin * 60 * 1000;
+  return 60 * 60 * 1000;
+}
+const WINDOW_BASE_MS = resolveWindowMs();
+// Optional per-cycle growth (STEP) + ceiling (MAX), env-only — used to probe for the cap. Default
+// STEP=0 → a fixed window (no growth), which is what you want in normal use.
+const WINDOW_STEP_MS = Number(process.env.BRIDGE_STOP_WINDOW_STEP_MS || 0);
 const WINDOW_MAX_MS = Number(process.env.BRIDGE_STOP_WINDOW_MAX_MS || 0);
 // Per-poll wait: how long each channel check blocks before looping. Controls reply-detection
 // latency within a window (not the re-arm/LLM cadence — that's the window).

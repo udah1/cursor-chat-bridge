@@ -4,6 +4,7 @@
   "minPollIntervalMs": 10000,
   "awaitTimeoutMs": 1800000,
   "stopBudgetMin": 60,
+  "stopWindowMin": 60,
   "caCertPath": "",
   "requireConfirmForDestructive": true,
   "adapters": {
@@ -22,9 +23,6 @@
       "botToken": "",
       "channelId": "",
       "allowedUserIds": []
-    },
-    "teams": {
-      "note": "Requires an Azure AD app registration with delegated Chat.ReadWrite; see README. Not usable without tenant admin consent."
     }
   }
 }

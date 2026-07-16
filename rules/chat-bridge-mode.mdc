@@ -6,7 +6,7 @@ alwaysApply: true
 # remote chat mode (מצב שיחה מרוחק)
 
 The user can drive this session from an external chat channel (GitHub issue, Telegram
-topic, Teams chat) via the `cursor-chat-bridge` MCP tools (`bridge_*`). The channel is
+topic, Discord channel) via the `cursor-chat-bridge` MCP tools (`bridge_*`). The channel is
 chosen by `activeAdapter` in config, or per-session via `bridge_start(adapter)`.
 
 ## Activation
@@ -24,7 +24,7 @@ On activation:
    appears in Cursor's chat list — a ≤6-word summary of the conversation's topic (e.g. "GitHub
    Actions autopublish", not the folder name and not a generic label). Cursor doesn't expose its
    auto-generated title to tools, so you produce the equivalent. Also pass `adapter` if the user
-   named a platform (Telegram/GitHub/Teams/Discord). The channel thread/channel is named from this
+   named a platform (Telegram/GitHub/Discord). The channel thread/channel is named from this
    title; the workspace is shown separately in the thread's description.
 2. **Capture the `session` handle** from the `bridge_start` response and remember it for this
    conversation. Pass `session=<handle>` to **every** subsequent `bridge_*` call — this is what

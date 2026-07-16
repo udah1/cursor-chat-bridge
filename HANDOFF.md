@@ -25,8 +25,8 @@ Control the Cursor agent from a chat app (phone-friendly). Say "start remote cha
 language) and, at the end of every turn, the agent posts a summary + question to a
 per-conversation thread in a chat channel, waits for the reply, and auto-continues — looping
 until stopped. Channels are pluggable **transport adapters**: GitHub Issues (default, working),
-Discord (working — a channel per session, REST-polled so it tunnels through proxies), Telegram
-(code complete, network-sensitive), Teams (scaffold only).
+Discord (working — a channel per session, REST-polled so it tunnels through proxies), and Telegram
+(code complete, network-sensitive).
 
 ## Architecture (where things live)
 
@@ -52,7 +52,7 @@ Discord (working — a channel per session, REST-polled so it tunnels through pr
 - **Daemon** `src/daemon.ts` — single local process owning the channel connection + a
   loopback-only, token-authenticated HTTP API used by the MCP and hooks. Handles routing,
   long-poll, stop/generation, own-message filtering, and best-effort ntfy push.
-- **Adapters** `src/adapters/{github,discord,telegram,teams}.ts` + `index.ts` factory. Implement
+- **Adapters** `src/adapters/{github,discord,telegram}.ts` + `index.ts` factory. Implement
   `TransportAdapter` from `src/types.ts` to add a channel. Discord is REST-poll based (like
   GitHub): `channelId` is an *anchor* used to discover the guild + category, and each session
   gets its own text channel (needs the bot's **Manage Channels** permission; deleted on stop).
@@ -108,7 +108,6 @@ Dry-run safely with `HOME=$(mktemp -d) node dist/cli.js install`.
    reply from phone, confirm the `stop`-hook auto-resume loop and the `beforeSubmitPrompt`
    off-switch. Best done fresh via `npx cursor-telegram-chat@latest install` on another machine.
 2. Consider making `session` **required** on non-start tools if any cross-talk reappears.
-3. Implement the **Teams** adapter (`src/adapters/teams.ts`) — Graph delegated auth.
 
 ## Publishing (now automated via GitHub Actions OIDC)
 

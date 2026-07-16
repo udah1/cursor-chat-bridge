@@ -1,7 +1,7 @@
 {
   "name": "cursor-telegram-chat",
-  "version": "0.1.1",
-  "description": "Control the Cursor AI agent from a chat app (Telegram, GitHub Issues, Teams, ...). Pluggable transport adapters + a local daemon + MCP tools + hooks.",
+  "version": "0.1.2",
+  "description": "Control the Cursor AI agent from a chat app (Telegram, GitHub Issues, Discord). Pluggable transport adapters + a local daemon + MCP tools + hooks.",
   "type": "module",
   "bin": {
     "cursor-telegram-chat": "dist/cli.js",
@@ -14,6 +14,7 @@
     "hooks",
     "rules",
     "scripts",
+    "docs",
     "config.example.json",
     "README.md"
   ],
@@ -34,7 +35,7 @@
     "mcp",
     "telegram",
     "github",
-    "teams",
+    "discord",
     "agent",
     "chatops",
     "remote-control"

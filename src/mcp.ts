@@ -61,15 +61,22 @@ const TOOLS = [
   {
     name: "bridge_start",
     description:
-      "Start remote chat mode for this conversation: opens a per-conversation thread in the configured chat " +
-      "channel (GitHub issue / Telegram topic / Teams chat) and routes end-of-turn summaries there. Call this " +
-      "when the user asks to start remote chat / bridge / telegram mode (in any language). If the channel isn't " +
-      "configured, this returns setup guidance — follow it to onboard the user, then call bridge_start again.",
+      "Start remote chat mode for this conversation: opens a per-conversation thread/channel in the configured " +
+      "chat channel (GitHub issue / Telegram topic / Discord channel) and routes end-of-turn summaries there. " +
+      "Call this when the user asks to start remote chat / bridge / telegram mode (in any language). If the " +
+      "channel isn't configured, this returns setup guidance — follow it to onboard the user, then call " +
+      "bridge_start again.",
     inputSchema: {
       type: "object",
       properties: {
-        title: { type: "string", description: "Human title for the session thread (defaults to the folder name)." },
-        adapter: { type: "string", description: "Override the channel adapter (github|telegram|teams)." },
+        title: {
+          type: "string",
+          description:
+            "Session title — a concise (≤6-word) summary of THIS conversation's topic, mirroring how it appears " +
+            "in Cursor's chat list (e.g. \"GitHub Actions autopublish\"). Names the thread/channel. Defaults to " +
+            "the folder name if omitted.",
+        },
+        adapter: { type: "string", description: "Override the channel adapter (github|telegram|discord)." },
       },
     },
   },
