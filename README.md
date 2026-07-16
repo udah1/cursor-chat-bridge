@@ -8,13 +8,15 @@ Say _"start remote chat mode"_ (in any language) and Cursor posts a summary + qu
 per-conversation thread at the end of every turn, waits for your reply, and **auto-continues** —
 looping until you stop it. Step away from the keyboard; keep shipping from your phone.
 
-[![npm version](https://img.shields.io/npm/v/cursor-telegram-chat?color=cb3837&logo=npm)](https://www.npmjs.com/package/cursor-telegram-chat)
+[![npm version](https://img.shields.io/npm/v/cursor-telegram-chat?style=for-the-badge&color=cb3837&logo=npm)](https://www.npmjs.com/package/cursor-telegram-chat)
+[![GitHub stars](https://img.shields.io/github/stars/udah1/cursor-chat-bridge?style=for-the-badge&logo=github&color=f5c518)](https://github.com/udah1/cursor-chat-bridge/stargazers)
+[![license](https://img.shields.io/npm/l/cursor-telegram-chat?style=for-the-badge&color=blue)](./LICENSE)
+[![Made for Cursor](https://img.shields.io/badge/built%20for-Cursor-000000?style=for-the-badge)](https://cursor.com)
+
 [![npm downloads](https://img.shields.io/npm/dm/cursor-telegram-chat?color=cb3837&logo=npm)](https://www.npmjs.com/package/cursor-telegram-chat)
 [![node](https://img.shields.io/node/v/cursor-telegram-chat?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![license](https://img.shields.io/npm/l/cursor-telegram-chat?color=blue)](./LICENSE)
-[![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](#-contributing)
-[![Made for Cursor](https://img.shields.io/badge/built%20for-Cursor-000000)](https://cursor.com)
+[![CI](https://img.shields.io/github/actions/workflow/status/udah1/cursor-chat-bridge/publish.yml?branch=master&logo=githubactions&logoColor=white&label=publish)](https://github.com/udah1/cursor-chat-bridge/actions/workflows/publish.yml)
 
 <img src="docs/architecture.png" alt="cursor-chat-bridge round-trip flow" width="760">
 
