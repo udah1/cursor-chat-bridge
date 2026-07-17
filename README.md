@@ -262,13 +262,14 @@ transcription as if you'd typed it — **off by default**. Enable it under `stt`
 
 ## Configuration
 
-`~/.cursor/chat-bridge/config.json`:
+`~/.cursor/chat-bridge/config.json` (edits to this file are picked up automatically on the next
+poll — no daemon restart needed; only `mcp.json` env changes and adapter credentials need a restart):
 
 ```jsonc
 {
   "activeAdapter": "telegram",
-  "pollIntervalMs": 10000,   // check for replies every N ms (min 10000)
-  "minPollIntervalMs": 10000,
+  "pollIntervalMs": 10000,   // check for replies every N ms (lower = snappier, more API calls)
+  "minPollIntervalMs": 2000, // floor for the above; lower it if you set pollIntervalMs < 10000
   "stopBudgetMin": 60,       // wait budget (mins); resets on every reply
   "stopWindowMin": 60,       // mins per window (keep < hooks.json timeout)
   "caCertPath": "",          // corporate CA bundle (PEM) if behind a TLS proxy

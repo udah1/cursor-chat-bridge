@@ -1,7 +1,7 @@
 {
   "activeAdapter": "telegram",
   "pollIntervalMs": 10000,
-  "minPollIntervalMs": 10000,
+  "minPollIntervalMs": 2000,
   "awaitTimeoutMs": 1800000,
   "stopBudgetMin": 60,
   "stopWindowMin": 60,

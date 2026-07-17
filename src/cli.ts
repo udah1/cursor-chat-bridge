@@ -4,6 +4,7 @@ import { Daemon } from "./daemon.js";
 import { CONFIG_PATH, ensureRuntimeDir } from "./paths.js";
 import { loadConfig, saveConfig } from "./config.js";
 import { createAdapter } from "./adapters/index.js";
+import { createSttProvider } from "./stt.js";
 import { daemonRequest, isAlive, readDaemonFile } from "./daemonClient.js";
 import { runInstall, runUninstall } from "./installer.js";
 import { log } from "./logger.js";
@@ -60,6 +61,21 @@ async function main() {
       console.log(`config: ${CONFIG_PATH}`);
       console.log(`activeAdapter: ${cfg.activeAdapter}`);
       console.log(`pollIntervalMs: ${cfg.pollIntervalMs} (min ${cfg.minPollIntervalMs})`);
+      // STT: show exactly which provider will be used (diagnoses "why is it using local?").
+      if (!cfg.stt?.enabled) {
+        console.log("stt: disabled");
+      } else {
+        const stt = cfg.stt;
+        const wantsLocal = stt.provider === "local" || stt.tryLocalSttFirst;
+        const prov = createSttProvider(stt);
+        if (wantsLocal) {
+          console.log(`stt: local "${stt.localBin}" ${prov ? "OK ✅" : "FAILED ❌"}`);
+        } else if (prov) {
+          console.log(`stt: cloud "${stt.provider}" via ${stt.baseUrl} — key resolved ✅`);
+        } else {
+          console.log(`stt: cloud "${stt.provider}" but NO API key resolved ❌ (set stt.apiKey / stt.apiKeyCommand)`);
+        }
+      }
       console.log(`daemon alive: ${await isAlive()}`);
       try {
         const a = createAdapter(cfg.activeAdapter, cfg, (m) => console.log("  " + m));

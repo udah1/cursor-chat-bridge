@@ -1,6 +1,6 @@
 {
   "name": "cursor-telegram-chat",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "description": "Control the Cursor AI agent from a chat app (Telegram, Discord, GitHub) — with image attachments and voice notes transcribed to text. Pluggable transport adapters + a local daemon + MCP tools + hooks.",
   "type": "module",
   "bin": {

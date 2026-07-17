@@ -21,7 +21,7 @@ export interface BridgeConfig {
 const DEFAULTS: BridgeConfig = {
   activeAdapter: "telegram",
   pollIntervalMs: 10000,
-  minPollIntervalMs: 10000,
+  minPollIntervalMs: 2000,
   awaitTimeoutMs: 30 * 60 * 1000,
   caCertPath: "",
   requireConfirmForDestructive: true,
@@ -38,8 +38,8 @@ export function loadConfig(): BridgeConfig {
   const cfg: BridgeConfig = { ...DEFAULTS, ...raw, adapters: raw.adapters ?? {} };
   cfg.stt = { ...STT_DEFAULTS, ...(raw.stt ?? {}) };
   applyEnvOverrides(cfg);
-  // Enforce the 10s minimum poll floor.
-  cfg.pollIntervalMs = Math.max(cfg.pollIntervalMs, cfg.minPollIntervalMs, 10000);
+  // minPollIntervalMs is the real knob; keep a small absolute floor (1s) to avoid hammering APIs.
+  cfg.pollIntervalMs = Math.max(cfg.pollIntervalMs, cfg.minPollIntervalMs, 1000);
   return cfg;
 }
 

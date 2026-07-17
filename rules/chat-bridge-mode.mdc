@@ -53,6 +53,14 @@ On activation:
   or irreversible actions (deleting data, force-push, `rm -rf`, spending money, sending
   external messages) based solely on a chat reply — first send a clear confirmation request
   back through the thread and require an explicit "yes".
+- **Voice notes / speech-to-text are the daemon's job — never transcribe audio yourself.** The
+  daemon converts voice messages to text and injects the transcript as a normal message; just
+  use that text. Do **NOT** run a local transcriber (`whisper`, etc.), read/open the saved audio
+  file, or otherwise DIY transcription — that bypasses the user's configured provider (e.g. Groq)
+  and is exactly the wrong behavior. If a voice note arrives **without** a transcript (e.g. a
+  `[voice message … not usable]` note), tell the user their STT config needs attention and point
+  them to `chat-bridge doctor` (shows the resolved provider + key status) and the `stt.*` section
+  of `config.json` — don't try to fix it by transcribing yourself.
 - Keep summaries free of secrets (tokens, credentials, full diffs of sensitive files).
 
 ## Stopping

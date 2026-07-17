@@ -2,7 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { DAEMON_FILE, MEDIA_DIR, ensureRuntimeDir } from "./paths.js";
+import { CONFIG_PATH, DAEMON_FILE, MEDIA_DIR, ensureRuntimeDir } from "./paths.js";
 import { loadConfig, type BridgeConfig } from "./config.js";
 import { Store } from "./state.js";
 import { createAdapter } from "./adapters/index.js";
@@ -51,9 +51,41 @@ export class Daemon {
   private sttProvider: SttProvider | null = null;
   private sttResolved = false;
   private sttInFlight = new Set<string>();
+  private cfgMtimeMs = 0;
 
   constructor() {
     this.cfg = loadConfig();
+    this.cfgMtimeMs = this.configMtime();
+  }
+
+  private configMtime(): number {
+    try {
+      return fs.statSync(CONFIG_PATH).mtimeMs;
+    } catch {
+      return 0;
+    }
+  }
+
+  /**
+   * Hot-reload config.json when it changes on disk, so edits (poll interval, STT
+   * provider/keys, timeouts) take effect without restarting the daemon. Adapter
+   * credential changes still need a restart since ingest streams are set up once.
+   */
+  private reloadConfigIfChanged(): void {
+    const m = this.configMtime();
+    if (m === 0 || m === this.cfgMtimeMs) return;
+    try {
+      this.cfg = loadConfig();
+      this.cfgMtimeMs = m;
+      // Force STT to re-resolve against the new config on next use.
+      this.sttResolved = false;
+      this.sttProvider = null;
+      log(
+        `config reloaded: pollIntervalMs=${this.cfg.pollIntervalMs} stt.enabled=${this.cfg.stt?.enabled} stt.provider=${this.cfg.stt?.provider}`,
+      );
+    } catch (e) {
+      log(`config reload failed, keeping previous: ${(e as Error).message}`);
+    }
   }
 
   /** Resolve the STT provider once (keys resolved here, not per request). */
@@ -214,6 +246,8 @@ export class Daemon {
   }
 
   private async poll(url: URL, res: http.ServerResponse): Promise<void> {
+    // Pick up config edits (poll interval, STT provider/keys) without a daemon restart.
+    this.reloadConfigIfChanged();
     const sessionId = url.searchParams.get("sessionId") ?? "";
     const waitMs = Math.min(Number(url.searchParams.get("waitMs") ?? "0"), 55000);
     const rec = this.store.get(sessionId);
@@ -221,7 +255,8 @@ export class Daemon {
     const adapter = await this.getAdapter(rec.adapter);
     const startGen = rec.generation;
     const deadline = Date.now() + waitMs;
-    const interval = Math.max(this.cfg.pollIntervalMs, this.cfg.minPollIntervalMs, 10000);
+    // loadConfig() already applies the floor; honor the configured value here.
+    const interval = this.cfg.pollIntervalMs;
 
     do {
       // Stop requested out-of-band?
