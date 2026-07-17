@@ -1,9 +1,23 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createSttProvider, sanitizeSttError, withTimeout, STT_DEFAULTS, type SttConfig } from "../src/stt.js";
+import { apiAudioFilename, createSttProvider, sanitizeSttError, withTimeout, STT_DEFAULTS, type SttConfig } from "../src/stt.js";
 import { isStop, stripAudioNotes } from "../src/daemon.js";
 
 const cfg = (over: Partial<SttConfig>): SttConfig => ({ ...STT_DEFAULTS, ...over });
+
+test("apiAudioFilename: renames .oga to .ogg (Whisper/Groq reject .oga)", () => {
+  assert.equal(apiAudioFilename("/tmp/x/abc-voice_123.oga"), "abc-voice_123.ogg");
+});
+
+test("apiAudioFilename: adds .ogg when extensionless", () => {
+  assert.equal(apiAudioFilename("/tmp/x/voicenote"), "voicenote.ogg");
+});
+
+test("apiAudioFilename: leaves supported extensions untouched", () => {
+  assert.equal(apiAudioFilename("/tmp/x/clip.mp3"), "clip.mp3");
+  assert.equal(apiAudioFilename("/tmp/x/clip.ogg"), "clip.ogg");
+  assert.equal(apiAudioFilename("/tmp/x/clip.m4a"), "clip.m4a");
+});
 
 test("createSttProvider: null when disabled", () => {
   assert.equal(createSttProvider(cfg({ enabled: false })), null);

@@ -89,7 +89,19 @@ export function collectTgAttachments(m: NonNullable<TgUpdate["message"]>): Inbou
   // Voice note (OGG/Opus) or an audio file — candidates for speech-to-text.
   const audio = m.voice || m.audio;
   if (audio) {
-    const ext = (audio.mime_type || "").includes("mpeg") ? "mp3" : "oga";
+    // Whisper/Groq infer the format from the filename extension and accept a fixed set
+    // (mp3, mp4, m4a, wav, webm, ogg, flac, …) — NOT ".oga". Telegram voice notes are
+    // OGG/Opus, so name them ".ogg" or transcription fails with "format not supported".
+    const mt = (audio.mime_type || "").toLowerCase();
+    const ext = mt.includes("mpeg") || mt.includes("mp3")
+      ? "mp3"
+      : mt.includes("mp4") || mt.includes("m4a") || mt.includes("aac")
+        ? "m4a"
+        : mt.includes("wav")
+          ? "wav"
+          : mt.includes("webm")
+            ? "webm"
+            : "ogg";
     out.push({
       kind: "audio",
       filename: audio.file_name || `voice_${audio.file_unique_id || audio.file_id}.${ext}`,

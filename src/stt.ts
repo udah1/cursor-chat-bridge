@@ -84,6 +84,22 @@ export function withTimeout<T>(p: Promise<T>, ms: number, label = "stt"): Promis
   });
 }
 
+/**
+ * Whisper (OpenAI/Groq) infers the audio format from the filename extension and only accepts a
+ * fixed set. Telegram voice notes arrive as ".oga" (or extensionless) which the API rejects with
+ * "format not supported", so present the same OGG bytes under a ".ogg" name.
+ */
+const WHISPER_EXTS = new Set(["flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm"]);
+export function apiAudioFilename(filePath: string): string {
+  const base = path.basename(filePath);
+  const m = base.match(/\.([A-Za-z0-9]+)$/);
+  const ext = (m?.[1] || "").toLowerCase();
+  if (WHISPER_EXTS.has(ext)) return base;
+  if (ext === "oga" || ext === "opus") return base.slice(0, base.length - ext.length - 1) + ".ogg";
+  if (!ext) return base + ".ogg";
+  return base;
+}
+
 /** OpenAI-compatible transcription endpoint (also works for Groq via `baseUrl`). */
 class OpenAiSttProvider implements SttProvider {
   readonly name = "openai";
@@ -93,7 +109,7 @@ class OpenAiSttProvider implements SttProvider {
     if (!this.apiKey) throw new Error("openai stt: no API key configured");
     const bytes = await fs.promises.readFile(filePath);
     const form = new FormData();
-    form.append("file", new Blob([bytes]), path.basename(filePath));
+    form.append("file", new Blob([bytes]), apiAudioFilename(filePath));
     form.append("model", opts.model || "whisper-1");
     form.append("response_format", "verbose_json");
     if (opts.language && opts.language !== "auto") form.append("language", opts.language);

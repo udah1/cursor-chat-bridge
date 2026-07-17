@@ -382,6 +382,9 @@ export class Daemon {
       } else if (att.size && att.size > cfg.maxBytes) {
         note = `[voice message too large to transcribe (${mb(att.size)}MB > ${mb(cfg.maxBytes)}MB limit)]`;
       } else {
+        log(
+          `stt: transcribing msg ${m.id} via ${provider.name} (model=${cfg.model}, file=${att.filename ?? att.localPath})`,
+        );
         const res = await withTimeout(
           provider.transcribe(att.localPath!, { language: cfg.language, model: cfg.model }),
           cfg.timeoutMs,
@@ -390,6 +393,7 @@ export class Daemon {
         const t = (res.text || "").trim();
         const lang = res.language ? ` (${res.language})` : "";
         note = t ? `[voice transcript${lang}]: ${t}` : "[voice message received but the transcription was empty]";
+        log(`stt: ${provider.name} OK for msg ${m.id} (${t.length} chars${lang})`);
         if (t && !cfg.keepAudio) {
           try {
             fs.rmSync(att.localPath!, { force: true });
@@ -398,13 +402,14 @@ export class Daemon {
       }
     } catch (e) {
       note = `[voice message transcription failed: ${sanitizeSttError(e)}]`;
+      log(`stt: transcription FAILED for msg ${m.id}: ${sanitizeSttError(e)}`);
     }
     const base = stripAudioNotes(m.text);
     const text = base ? `${base}\n\n${note}` : note;
     // A transcribed "stop" must NOT auto-end the session; the bracketed prefix ensures isStop() misses.
     this.store.enqueueInbound(sessionId, { id: `stt-${m.id}`, text, ts: Date.now(), authorId: m.authorId });
     this.sttInFlight.delete(m.id);
-    log(`stt: injected transcript for session ${sessionId} (src msg ${m.id})`);
+    log(`stt: injected result for session ${sessionId} (src msg ${m.id})`);
   }
 
   private async stop(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
