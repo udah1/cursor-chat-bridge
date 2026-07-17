@@ -36,16 +36,8 @@ export function loadConfig(): BridgeConfig {
     raw = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
   }
   const cfg: BridgeConfig = { ...DEFAULTS, ...raw, adapters: raw.adapters ?? {} };
-  // Merge STT config over defaults; remember whether the provider was chosen explicitly.
-  const providerExplicit = !!(raw.stt && (raw.stt as Partial<SttConfig>).provider);
   cfg.stt = { ...STT_DEFAULTS, ...(raw.stt ?? {}) };
   applyEnvOverrides(cfg);
-  // On a corporate network (caCertPath set), avoid sending audio off-host by default: fall back to
-  // the local provider unless the user explicitly chose a provider (config or env).
-  const envProvider = !!process.env.BRIDGE_STT_PROVIDER;
-  if (cfg.stt.enabled && cfg.caCertPath && !providerExplicit && !envProvider && cfg.stt.provider === "openai") {
-    cfg.stt.provider = "local";
-  }
   // Enforce the 10s minimum poll floor.
   cfg.pollIntervalMs = Math.max(cfg.pollIntervalMs, cfg.minPollIntervalMs, 10000);
   return cfg;
@@ -93,6 +85,7 @@ export function applyEnvOverrides(cfg: BridgeConfig): void {
     const p = e.BRIDGE_STT_PROVIDER.trim();
     if (p === "openai" || p === "local") stt.provider = p;
   }
+  if (e.BRIDGE_STT_TRY_LOCAL_FIRST) stt.tryLocalSttFirst = /^(1|true|yes|on)$/i.test(e.BRIDGE_STT_TRY_LOCAL_FIRST.trim());
   if (e.BRIDGE_STT_MODEL) stt.model = e.BRIDGE_STT_MODEL.trim();
   if (e.BRIDGE_STT_LANGUAGE) stt.language = e.BRIDGE_STT_LANGUAGE.trim();
   if (e.BRIDGE_STT_API_KEY) stt.apiKey = e.BRIDGE_STT_API_KEY.trim();

@@ -27,6 +27,9 @@ export interface SttProvider {
 export interface SttConfig {
   enabled: boolean;
   provider: "openai" | "local";
+  /** Force the local transcriber even if a cloud `provider` is configured. Off by default: the
+   *  configured provider (e.g. Groq/OpenAI) is always respected. */
+  tryLocalSttFirst: boolean;
   model: string;
   language: string;
   apiKey?: string;
@@ -42,6 +45,7 @@ export interface SttConfig {
 export const STT_DEFAULTS: SttConfig = {
   enabled: false,
   provider: "openai",
+  tryLocalSttFirst: false,
   model: "whisper-1",
   language: "auto",
   apiKey: "",
@@ -135,7 +139,9 @@ class LocalSttProvider implements SttProvider {
  */
 export function createSttProvider(stt: SttConfig | undefined): SttProvider | null {
   if (!stt || !stt.enabled) return null;
-  if (stt.provider === "local") {
+  // Only use local when explicitly asked (provider: "local" or the opt-in flag). Otherwise the
+  // configured cloud provider (Groq/OpenAI) is always respected — we never silently fall back to local.
+  if (stt.provider === "local" || stt.tryLocalSttFirst) {
     return new LocalSttProvider(stt.localBin || "whisper", stt.localArgs ?? STT_DEFAULTS.localArgs);
   }
   // default: openai-compatible

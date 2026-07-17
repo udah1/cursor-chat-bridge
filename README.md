@@ -245,17 +245,18 @@ transcription as if you'd typed it — **off by default**. Enable it under `stt`
 ```jsonc
 "stt": {
   "enabled": true,
-  "provider": "openai",   // "openai" (OpenAI-compatible via baseUrl) or "local"
-  "apiKeyCommand": "…",   // or "apiKey", or env BRIDGE_STT_API_KEY
-  "language": "auto",     // auto-detect, or force "he" / "en"
-  "keepAudio": true       // false = delete the audio after transcribing
+  "provider": "openai",     // "openai" (OpenAI-compatible via baseUrl) or "local"
+  "tryLocalSttFirst": false,// true = force the local transcriber even if a cloud provider is set
+  "apiKeyCommand": "…",     // or "apiKey", or env BRIDGE_STT_API_KEY
+  "language": "auto",       // auto-detect, or force "he" / "en"
+  "keepAudio": true         // false = delete the audio after transcribing
 }
 ```
 
 - **`local` provider** (offline, recommended for sensitive audio): set `localBin`/`localArgs` to a CLI
-  that prints the transcript to stdout (e.g. `whisper.cpp`). On a **corporate network** (`caCertPath`
-  set), the default provider automatically flips to `local` so audio isn't sent off-host unless you
-  explicitly choose a cloud provider.
+  that prints the transcript to stdout (e.g. `whisper.cpp`). The configured `provider` is always
+  respected — the bridge never silently falls back to `local`. To force the local transcriber even
+  when a cloud provider is set, use `"tryLocalSttFirst": true` (or `BRIDGE_STT_TRY_LOCAL_FIRST=1`).
 - Transcription runs **asynchronously** in the daemon (never blocks the poll window); the transcript
   is delivered on the next reply cycle. See [`docs/stt-plan.md`](docs/stt-plan.md) for the full design.
 

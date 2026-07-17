@@ -28,6 +28,7 @@
   "stt": {
     "enabled": false,
     "provider": "openai",
+    "tryLocalSttFirst": false,
     "model": "whisper-1",
     "language": "auto",
     "apiKey": "",
