@@ -20,7 +20,7 @@ export interface BridgeConfig {
 
 const DEFAULTS: BridgeConfig = {
   activeAdapter: "telegram",
-  pollIntervalMs: 60000,
+  pollIntervalMs: 10000,
   minPollIntervalMs: 10000,
   awaitTimeoutMs: 30 * 60 * 1000,
   caCertPath: "",

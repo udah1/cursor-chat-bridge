@@ -266,7 +266,7 @@ transcription as if you'd typed it — **off by default**. Enable it under `stt`
 ```jsonc
 {
   "activeAdapter": "telegram",
-  "pollIntervalMs": 60000,   // check for replies every N ms (min 10000)
+  "pollIntervalMs": 10000,   // check for replies every N ms (min 10000)
   "minPollIntervalMs": 10000,
   "stopBudgetMin": 60,       // wait budget (mins); resets on every reply
   "stopWindowMin": 60,       // mins per window (keep < hooks.json timeout)
@@ -423,6 +423,20 @@ the thread, or call `bridge_stop`.
 skipped or failed (offline / corporate proxy), the MCP server won't start —
 finish it with `(cd ~/.cursor/chat-bridge/app && npm install --omit=dev)`. Running from a git clone
 instead? Run `npm install` in the repo first.
+
+**Ask whether they want voice notes transcribed (STT).** It's off by default. If they say yes, offer
+the options and let them pick:
+
+- **Groq (recommended)** — fast, generous free tier, OpenAI-compatible. Set `stt.provider: "openai"`,
+  `stt.baseUrl: "https://api.groq.com/openai/v1"`, `stt.model: "whisper-large-v3-turbo"`, and
+  `stt.apiKey` to a `gsk_…` key from <https://console.groq.com/keys>.
+- **OpenAI** — `stt.provider: "openai"` (default `baseUrl`), `stt.model: "whisper-1"` (or
+  `gpt-4o-transcribe`), `stt.apiKey` an `sk-…` key.
+- **Local** — `stt.provider: "local"` with a `whisper.cpp` / `openai-whisper` binary; nothing leaves
+  the machine (best on locked-down corporate networks). Set `stt.localBin`.
+
+Then set `stt.enabled: true` and run `chat-bridge doctor`. Prefer `stt.apiKeyCommand` over an inline
+key where possible, and **never print the key back to the user**.
 </details>
 
 ## Writing a new adapter
