@@ -92,7 +92,7 @@ its own the instant you reply — no laptop required.
 | **Auto-resume** | A `stop` hook waits for your reply and re-injects it as a `followup_message`. |
 | **Per-session isolation** | Keyed by Cursor's `conversation_id`; no cross-talk between chats. |
 | **Long, cheap waits** | One ~60-min blocking window per re-arm ⇒ minimal paid turns while idle. |
-| **Off when you type** | A `beforeSubmitPrompt` hook disables the loop the moment you type in Cursor. |
+| **Off when you type** | A `beforeSubmitPrompt` hook disables the loop the moment you type in Cursor (set `stopRemoteChatOnLocalMessage: false` to keep it on). |
 | **Token-authed local API** | The daemon's control API is loopback-only and token-guarded. |
 | **Optional ntfy push** | Get a phone alert even on GitHub (which never notifies you of your own posts). |
 | **Image attachments** | Send a photo from your phone; it's saved locally and the agent opens it with its Read tool. |
@@ -274,6 +274,7 @@ poll — no daemon restart needed; only `mcp.json` env changes and adapter crede
   "stopWindowMin": 60,       // mins per window (keep < hooks.json timeout)
   "caCertPath": "",          // corporate CA bundle (PEM) if behind a TLS proxy
   "requireConfirmForDestructive": true,
+  "stopRemoteChatOnLocalMessage": true, // typing in Cursor turns remote mode off (set false to keep it on)
   "adapters": {
     "github": {
       "owner": "you",

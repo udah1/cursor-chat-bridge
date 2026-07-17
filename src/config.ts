@@ -11,6 +11,9 @@ export interface BridgeConfig {
   awaitTimeoutMs: number;
   caCertPath?: string;
   requireConfirmForDestructive?: boolean;
+  /** When true (default), typing a real prompt in Cursor turns remote chat mode OFF (the
+   *  `beforeSubmitPrompt` off-switch). Set false to keep remote mode on while you also type locally. */
+  stopRemoteChatOnLocalMessage?: boolean;
   adapters: Record<string, any>;
   /** Optional out-of-band push (e.g. ntfy) so you get a phone alert on each summary. */
   notify?: NotifyConfig;
@@ -25,6 +28,7 @@ const DEFAULTS: BridgeConfig = {
   awaitTimeoutMs: 30 * 60 * 1000,
   caCertPath: "",
   requireConfirmForDestructive: true,
+  stopRemoteChatOnLocalMessage: true,
   adapters: {},
   // ntfy push is OFF by default; enable it only via BRIDGE_NTFY_* env on the MCP entry.
 };

@@ -83,7 +83,8 @@ async function main() {
       if (fs.existsSync(HOOK_DEBUG_PATH)) {
         const age = Date.now() - fs.statSync(HOOK_DEBUG_PATH).mtimeMs;
         const days = Math.floor(age / 86400000);
-        console.log(`hooks: installed ✅ (last submit ${days === 0 ? "today" : days + "d ago"})`);
+        const offSwitch = cfg.stopRemoteChatOnLocalMessage === false ? "off (stays on when you type)" : "on (type-to-stop)";
+        console.log(`hooks: installed ✅ (last submit ${days === 0 ? "today" : days + "d ago"}); off-switch: ${offSwitch}`);
       } else {
         console.log(
           "hooks: NOT detected ⚠️  — the beforeSubmitPrompt hook hasn't run. Per-conversation " +

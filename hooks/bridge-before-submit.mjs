@@ -12,6 +12,7 @@ import http from "node:http";
 import crypto from "node:crypto";
 
 const RUNTIME = path.join(os.homedir(), ".cursor", "chat-bridge");
+const CONFIG_PATH = path.join(RUNTIME, "config.json");
 const MARKERS = path.join(RUNTIME, "markers");
 const CONV_DIR = path.join(MARKERS, "conv");
 const WS_DIR = path.join(MARKERS, "ws");
@@ -118,6 +119,11 @@ async function main() {
     } catch {}
     process.exit(0);
   }
+
+  // Off-switch opt-out: if the user set stopRemoteChatOnLocalMessage=false, keep remote chat
+  // mode ON even when they type locally in Cursor (default is true -> stop).
+  const cfg = readJSON(CONFIG_PATH) || {};
+  if (cfg.stopRemoteChatOnLocalMessage === false) process.exit(0);
 
   // Real user submit in Cursor -> disable remote chat mode and notify the thread.
   await daemonStop(marker.sessionId);
