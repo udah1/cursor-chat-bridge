@@ -479,6 +479,24 @@ interface TransportAdapter {
 - Tokens live in `~/.cursor/chat-bridge/config.json` (chmod 600) and are never committed. Prefer
   `tokenCommand` over a stored token where possible.
 
+### Permissions — what the daemon needs (and why scanners flag it)
+
+Driving an agent from a chat app inherently needs some powerful capabilities. This package uses:
+
+- **Child processes** — to spawn the daemon, run your `tokenCommand` (e.g. `gh auth token`), the
+  local `whisper` binary (only if you choose local STT), and `npm install` inside the installer.
+- **Network access** — a loopback-only control server plus outbound calls to your chosen channel
+  (Telegram/Discord/GitHub), speech-to-text upload (if enabled), and an npm update check.
+- **Filesystem access** — read/write `~/.cursor/chat-bridge/` for config, media, and logs.
+
+Because of these, supply-chain scanners (Socket, Snyk, etc.) show a lower **Supply Chain Security**
+score than a pure-logic library — even though there are **no known vulnerabilities**. That score
+reflects *capability + package age* (this project is new, single-maintainer), not a detected exploit.
+For transparency: there is **no `postinstall`/`install` script** — the only lifecycle script is
+`prepublishOnly` (a build that runs on the publisher's machine, never on your install). Everything
+network/filesystem/process happens only when **you** run the daemon, and the control API is
+loopback-only and token-guarded. The source is MIT and auditable in this repo.
+
 ## Verification status
 
 Verified end-to-end on-machine (no Cursor restart needed):
