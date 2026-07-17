@@ -152,11 +152,24 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       //   3. last-submit ONLY if its workspace matches ours (so a different window's submit can't
       //      hijack our id),
       //   4. a fresh random id as a last resort.
+      // CRITICAL: only trust the handshake pointers if they are FRESH. The hook stamps them right
+      // before the agent runs, so a genuine "start remote chat" submit produces a pointer that is
+      // seconds old. A stale pointer means the hook didn't fire for THIS chat (hooks not installed,
+      // or an old/partial setup) — in that case we must NOT inherit the previous chat's session
+      // (which would reuse its Telegram thread). Mint a fresh id instead so every Cursor chat maps
+      // to its own unique thread.
+      const HANDSHAKE_FRESH_MS = 5 * 60 * 1000;
+      const now = Date.now();
       const ls = readLastSubmit();
-      const wsPtr = readWsPointer(WORKSPACE)?.conversationId;
-      const lsMatchesWs = ls && ls.workspace && ls.workspace === WORKSPACE ? ls.conversationId : null;
+      const wsp = readWsPointer(WORKSPACE);
+      const wsFresh =
+        wsp?.conversationId && now - (wsp.at ?? 0) < HANDSHAKE_FRESH_MS ? wsp.conversationId : null;
+      const lsFresh =
+        ls?.conversationId && ls.workspace === WORKSPACE && now - (ls.at ?? 0) < HANDSHAKE_FRESH_MS
+          ? ls.conversationId
+          : null;
       const conversationId =
-        (args.session ? String(args.session) : null) ?? wsPtr ?? lsMatchesWs ?? crypto.randomUUID();
+        (args.session ? String(args.session) : null) ?? wsFresh ?? lsFresh ?? crypto.randomUUID();
       const workspace = WORKSPACE || ls?.workspace || "";
       const title = args.title || workspace.split("/").pop() || "cursor-session";
       debug(`bridge_start workspace=${workspace} conversationId=${conversationId} adapter=${adapter}`);

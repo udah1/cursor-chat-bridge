@@ -53,12 +53,10 @@ function readJSON<T>(p: string): T | null {
 export function writeMarker(m: Marker): void {
   ensureDirs();
   fs.writeFileSync(path.join(CONV_DIR, `${m.conversationId}.json`), JSON.stringify(m, null, 2));
-  if (m.workspace) {
-    fs.writeFileSync(
-      path.join(WS_DIR, `${wsHash(m.workspace)}.json`),
-      JSON.stringify({ conversationId: m.conversationId, at: Date.now() }, null, 2)
-    );
-  }
+  // NOTE: the per-workspace pointer (ws/<hash>.json) is written ONLY by the beforeSubmitPrompt
+  // hook, which stamps the *current* conversation id for each submit. bridge_start deliberately
+  // does NOT write it here — otherwise a stale pointer from a previous chat could look "fresh"
+  // and a brand-new Cursor chat would inherit the previous chat's session/thread.
 }
 
 export function readMarker(conversationId: string): Marker | null {
@@ -84,7 +82,7 @@ export function readLastSubmit(): SubmitContext | null {
   return readJSON<SubmitContext>(LAST_SUBMIT);
 }
 
-export function readWsPointer(workspace: string): { conversationId: string } | null {
+export function readWsPointer(workspace: string): { conversationId: string; at?: number } | null {
   if (!workspace) return null;
-  return readJSON<{ conversationId: string }>(path.join(WS_DIR, `${wsHash(workspace)}.json`));
+  return readJSON<{ conversationId: string; at?: number }>(path.join(WS_DIR, `${wsHash(workspace)}.json`));
 }

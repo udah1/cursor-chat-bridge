@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import { Daemon } from "./daemon.js";
-import { CONFIG_PATH, ensureRuntimeDir } from "./paths.js";
+import { CONFIG_PATH, HOOK_DEBUG_PATH, ensureRuntimeDir } from "./paths.js";
 import { loadConfig, saveConfig } from "./config.js";
 import { createAdapter } from "./adapters/index.js";
 import { createSttProvider } from "./stt.js";
@@ -77,6 +77,19 @@ async function main() {
         }
       }
       console.log(`daemon alive: ${await isAlive()}`);
+      // Hooks health: the beforeSubmitPrompt hook stamps each chat's conversation id (so every
+      // Cursor chat gets its OWN thread) and is the off-switch. If it never ran, warn — without it
+      // a new chat can inherit a previous chat's thread.
+      if (fs.existsSync(HOOK_DEBUG_PATH)) {
+        const age = Date.now() - fs.statSync(HOOK_DEBUG_PATH).mtimeMs;
+        const days = Math.floor(age / 86400000);
+        console.log(`hooks: installed ✅ (last submit ${days === 0 ? "today" : days + "d ago"})`);
+      } else {
+        console.log(
+          "hooks: NOT detected ⚠️  — the beforeSubmitPrompt hook hasn't run. Per-conversation " +
+            "threads and the type-to-stop off-switch need it. Re-run `npx cursor-telegram-chat@latest install` and reload Cursor.",
+        );
+      }
       try {
         const a = createAdapter(cfg.activeAdapter, cfg, (m) => console.log("  " + m));
         await a.init();
