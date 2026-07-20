@@ -14,6 +14,10 @@ export interface BridgeConfig {
   /** When true (default), typing a real prompt in Cursor turns remote chat mode OFF (the
    *  `beforeSubmitPrompt` off-switch). Set false to keep remote mode on while you also type locally. */
   stopRemoteChatOnLocalMessage?: boolean;
+  /** How long (ms) a beforeSubmit handshake / pending-start record is considered "fresh" enough
+   *  for bridge_start to claim. Generous by default; this only gates stale->fail-closed, NOT
+   *  which conversation wins (that's decided by the single fresh pending record). */
+  handshakeFreshMs?: number;
   adapters: Record<string, any>;
   /** Optional out-of-band push (e.g. ntfy) so you get a phone alert on each summary. */
   notify?: NotifyConfig;
@@ -29,6 +33,7 @@ const DEFAULTS: BridgeConfig = {
   caCertPath: "",
   requireConfirmForDestructive: true,
   stopRemoteChatOnLocalMessage: true,
+  handshakeFreshMs: 600000,
   adapters: {},
   // ntfy push is OFF by default; enable it only via BRIDGE_NTFY_* env on the MCP entry.
 };
@@ -60,6 +65,10 @@ export function applyEnvOverrides(cfg: BridgeConfig): void {
     if (Number.isFinite(sec) && sec > 0) cfg.pollIntervalMs = Math.round(sec * 1000);
   }
   if (e.BRIDGE_CA_CERT) cfg.caCertPath = e.BRIDGE_CA_CERT;
+  if (e.BRIDGE_HANDSHAKE_FRESH_MS) {
+    const ms = Number(e.BRIDGE_HANDSHAKE_FRESH_MS);
+    if (Number.isFinite(ms) && ms > 0) cfg.handshakeFreshMs = Math.round(ms);
+  }
 
   cfg.adapters = cfg.adapters ?? {};
   const gh = (cfg.adapters.github = cfg.adapters.github ?? {});

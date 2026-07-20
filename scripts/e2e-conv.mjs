@@ -1,6 +1,12 @@
 #!/usr/bin/env node
-// End-to-end test of per-conversation routing, stale-stop recovery, and onboarding guidance.
-// Drives the built MCP over stdio the way Cursor would, simulating the beforeSubmit handshake.
+// End-to-end test of the claim-by-conversation-id identity model:
+//  - a real submit writes markers/pending/<conversationId>.json (the source of truth)
+//  - bridge_start CLAIMS the single fresh pending record (never mints a random id)
+//  - ambiguous / stale / missing handshakes FAIL CLOSED (no thread crossing)
+//  - non-start tools REQUIRE the session handle
+//  - a misrouted MCP (wrong BRIDGE_WORKSPACE) still binds the right conversation
+//  - legacy (pre-pending) handshakes still work via the bounded skew fallback
+// Requires a running daemon with the `github` adapter configured (same as before).
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import fs from "node:fs";
@@ -12,27 +18,44 @@ import { fileURLToPath } from "node:url";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const MARKERS = path.join(os.homedir(), ".cursor", "chat-bridge", "markers");
+const PENDING = path.join(MARKERS, "pending");
+const CLAIMING = path.join(MARKERS, "claiming");
+const CONV = path.join(MARKERS, "conv");
 const LAST_SUBMIT = path.join(MARKERS, "last-submit.json");
 const DAEMON_FILE = path.join(os.homedir(), ".cursor", "chat-bridge", "daemon.json");
+const ADAPTER = "github"; // explicit so the test doesn't depend on config.activeAdapter
 
-// Mirror exactly what the real beforeSubmitPrompt hook writes: the global last-submit AND the
-// per-workspace pointer (ws/<hash(workspace)>.json). bridge_start prefers the per-workspace
-// pointer, so omitting it here would not reflect production behaviour.
 function wsHash(ws) {
   return crypto.createHash("sha1").update(ws).digest("hex").slice(0, 16);
 }
-function writeHandshake(conversationId, workspace) {
-  fs.mkdirSync(MARKERS, { recursive: true });
+// A real submit: the beforeSubmit hook writes the per-conversation pending record (source of
+// truth) plus the legacy last-submit / ws pointer (diagnostics + upgrade-skew fallback).
+function submit(conversationId, workspace, at = Date.now()) {
+  fs.mkdirSync(PENDING, { recursive: true });
   fs.mkdirSync(path.join(MARKERS, "ws"), { recursive: true });
-  fs.writeFileSync(LAST_SUBMIT, JSON.stringify({ conversationId, workspace, at: Date.now() }));
-  fs.writeFileSync(
-    path.join(MARKERS, "ws", `${wsHash(workspace)}.json`),
-    JSON.stringify({ conversationId, at: Date.now() })
-  );
+  fs.writeFileSync(path.join(PENDING, `${conversationId}.json`), JSON.stringify({ conversationId, workspace, at }));
+  fs.writeFileSync(LAST_SUBMIT, JSON.stringify({ conversationId, workspace, at }));
+  fs.writeFileSync(path.join(MARKERS, "ws", `${wsHash(workspace)}.json`), JSON.stringify({ conversationId, at }));
+}
+// A LEGACY submit (old hook): only last-submit + ws pointer, NO pending record.
+function legacySubmit(conversationId, workspace, at = Date.now()) {
+  fs.mkdirSync(path.join(MARKERS, "ws"), { recursive: true });
+  fs.writeFileSync(LAST_SUBMIT, JSON.stringify({ conversationId, workspace, at }));
+  fs.writeFileSync(path.join(MARKERS, "ws", `${wsHash(workspace)}.json`), JSON.stringify({ conversationId, at }));
+}
+function clearPending() {
+  for (const d of [PENDING, CLAIMING]) {
+    try {
+      for (const f of fs.readdirSync(d)) fs.rmSync(path.join(d, f), { force: true });
+    } catch {}
+  }
+  try {
+    fs.rmSync(LAST_SUBMIT, { force: true });
+  } catch {}
 }
 function readConvMarker(cid) {
   try {
-    return JSON.parse(fs.readFileSync(path.join(MARKERS, "conv", `${cid}.json`), "utf8"));
+    return JSON.parse(fs.readFileSync(path.join(CONV, `${cid}.json`), "utf8"));
   } catch {
     return null;
   }
@@ -55,10 +78,14 @@ async function mcp(workspace, fn) {
 const callText = async (client, name, args = {}) =>
   (await client.callTool({ name, arguments: args })).content?.[0]?.text ?? "";
 
-// Stop a session directly via the daemon loopback (simulates a remote `stop`).
 function daemonStop(sessionId) {
   return new Promise((resolve) => {
-    const d = JSON.parse(fs.readFileSync(DAEMON_FILE, "utf8"));
+    let d;
+    try {
+      d = JSON.parse(fs.readFileSync(DAEMON_FILE, "utf8"));
+    } catch {
+      return resolve();
+    }
     const data = JSON.stringify({ sessionId });
     const req = http.request(
       { host: "127.0.0.1", port: d.port, path: "/stop", method: "POST", headers: { "Content-Type": "application/json", "x-bridge-token": d.token } },
@@ -73,66 +100,103 @@ function daemonStop(sessionId) {
 let failures = 0;
 const assert = (cond, msg) => { console.log(`${cond ? "✅" : "❌"} ${msg}`); if (!cond) failures++; };
 
-const A = "e2e-conv-AAAA-" + Date.now();
-const B = "e2e-conv-BBBB-" + Date.now();
+const stamp = Date.now();
+const A = `e2e-A-${stamp}`;
+const B = `e2e-B-${stamp}`;
+const M = `e2e-MISROUTE-${stamp}`;
+const C = `e2e-C-${stamp}`;
+const D = `e2e-D-${stamp}`;
+const S = `e2e-STALE-${stamp}`;
+const T = `e2e-ONBOARD-${stamp}`;
+const L = `e2e-LEGACY-${stamp}`;
 const WA = "/tmp/ccb-e2e/projectA";
 const WB = "/tmp/ccb-e2e/projectB";
+const WM = "/tmp/ccb-e2e/projectM";
+const WL = "/tmp/ccb-e2e/projectLegacy";
+const FRESH_MS = 600000;
 
-// 1) Two conversations in different workspaces -> two distinct issues.
-writeHandshake(A, WA);
-const startA = await mcp(WA, (c) => callText(c, "bridge_start", { title: "convA" }));
-console.log("START A:", startA.slice(0, 120));
-writeHandshake(B, WB);
-const startB = await mcp(WB, (c) => callText(c, "bridge_start", { title: "convB" }));
-console.log("START B:", startB.slice(0, 120));
-
+// 1) One fresh pending per start -> the marker is keyed by the REAL conversation id (never a uuid).
+clearPending();
+submit(A, WA);
+const startA = await mcp(WA, (c) => callText(c, "bridge_start", { title: "convA", adapter: ADAPTER }));
+console.log("START A:", startA.slice(0, 100));
+submit(B, WB);
+const startB = await mcp(WB, (c) => callText(c, "bridge_start", { title: "convB", adapter: ADAPTER }));
 const mA = readConvMarker(A);
 const mB = readConvMarker(B);
-assert(!!mA && !!mB, "both conversation markers written");
+assert(!!mA && mA.conversationId === A, `marker A keyed by real conversation id (${A})`);
+assert(!!mB && mB.conversationId === B, `marker B keyed by real conversation id (${B})`);
 assert(mA?.thread && mB?.thread && mA.thread !== mB.thread, `distinct threads (A=${mA?.thread} B=${mB?.thread})`);
+assert(!fs.existsSync(path.join(PENDING, `${A}.json`)) && !fs.existsSync(path.join(CLAIMING, `${A}.json`)), "A's pending consumed + claim finalized");
 
-// 2) Sending from conv A resolves to A's session even though B started most recently.
-const sendA = await mcp(WA, (c) => callText(c, "bridge_send", { text: "hello from A" }));
-assert(sendA === "sent", "conv A send routed to A's own session (workspace pointer wins over last-submit)");
+// 2) Non-start tools REQUIRE the session handle.
+const noSession = await mcp(WA, (c) => callText(c, "bridge_send", { text: "hi" }));
+assert(/missing required 'session'/i.test(noSession), "bridge_send without session is rejected");
+const sendA = await mcp(WA, (c) => callText(c, "bridge_send", { text: "hello from A", session: A }));
+assert(sendA === "sent", "bridge_send with session=A routes to A");
 
-// 3) Stale-stop recovery: stop A, then re-start A -> fresh thread, and await is NOT instantly 'stopped'.
-await daemonStop(A);
-writeHandshake(A, WA);
-const restartA = await mcp(WA, (c) => callText(c, "bridge_start", { title: "convA again" }));
-const mA2 = readConvMarker(A);
-assert(mA2?.thread && mA2.thread !== mA?.thread, `re-start opens a FRESH thread (was ${mA?.thread}, now ${mA2?.thread})`);
-const awaitA = await mcp(WA, (c) => callText(c, "bridge_send_and_await", { text: "still alive?", maxBlockMs: 1500 }));
-let awaitStatus = "";
-try { awaitStatus = JSON.parse(awaitA).status; } catch {}
-assert(awaitStatus === "timeout", `await after re-start returns '${awaitStatus}' (expected 'timeout', NOT 'stopped')`);
+// 3) Misrouted MCP: BRIDGE_WORKSPACE is WRONG, but the single fresh pending still binds the
+//    right conversation AND its own workspace (claim wins over the process's env).
+clearPending();
+submit(M, WM);
+const startM = await mcp("/tmp/ccb-e2e/WRONG-workspace", (c) => callText(c, "bridge_start", { title: "convM", adapter: ADAPTER }));
+console.log("START M (misrouted):", startM.slice(0, 100));
+const mM = readConvMarker(M);
+assert(!!mM && mM.conversationId === M, `misrouted start still binds real id ${M}`);
+assert(mM?.workspace === WM, `misrouted start uses the CLAIM's workspace (${WM}), not the MCP env`);
 
-// 3b) Two conversations in the SAME workspace: explicit session handle keeps them separate.
-const C = "e2e-conv-CCCC-" + Date.now();
-const D = "e2e-conv-DDDD-" + Date.now();
-const WC = "/tmp/ccb-e2e/projectShared";
-writeHandshake(C, WC);
-await mcp(WC, (c) => callText(c, "bridge_start", { title: "convC" }));
-writeHandshake(D, WC);
-await mcp(WC, (c) => callText(c, "bridge_start", { title: "convD" }));
-const mC = readConvMarker(C);
-const mD = readConvMarker(D);
-assert(mC?.thread && mD?.thread && mC.thread !== mD.thread, `same-workspace: distinct threads (C=${mC?.thread} D=${mD?.thread})`);
-// The workspace pointer now points at D (started last). Explicit session=C must still win.
-const statusC = await mcp(WC, (c) => callText(c, "bridge_status", { session: C }));
-let scThread = null;
-try { scThread = JSON.parse(statusC).session?.thread?.thread; } catch {}
-assert(scThread === mC.thread, `explicit session=C resolves to C's thread ${mC?.thread} (got ${scThread}) despite D starting last`);
-await daemonStop(C);
-await daemonStop(D);
+// 4) Ambiguous: two fresh pendings in the SAME workspace -> FAIL CLOSED, nothing minted.
+clearPending();
+const WSAME = "/tmp/ccb-e2e/pShared";
+submit(C, WSAME);
+submit(D, WSAME);
+const amb = await mcp(WSAME, (c) => callText(c, "bridge_start", { title: "ambiguous", adapter: ADAPTER }));
+assert(/more than one chat in this same project folder/i.test(amb), "same-folder ambiguous start fails closed");
+assert(!readConvMarker(C) && !readConvMarker(D), "ambiguous start minted NO markers");
+assert(fs.existsSync(path.join(PENDING, `${C}.json`)) && fs.existsSync(path.join(PENDING, `${D}.json`)), "ambiguous start consumed nothing");
 
-// 4) Onboarding: telegram without config returns guidance, not an error/thread.
-const tg = await mcp("/tmp/ccb-e2e/projectC", (c) => callText(c, "bridge_start", { adapter: "telegram" }));
-assert(/botToken/i.test(tg) && /BotFather/i.test(tg), "telegram onboarding guidance returned when unconfigured");
-console.log("TELEGRAM GUIDANCE:", tg.slice(0, 100));
+// 5) Stale: only an old pending -> FAIL CLOSED (stale).
+clearPending();
+submit(S, "/tmp/ccb-e2e/ps", Date.now() - FRESH_MS - 5000);
+const stale = await mcp("/tmp/ccb-e2e/ps", (c) => callText(c, "bridge_start", { title: "stale", adapter: ADAPTER }));
+assert(/stale or already claimed/i.test(stale), "stale start fails closed with guidance");
+assert(!readConvMarker(S), "stale start minted NO marker");
 
-// Cleanup sessions we created.
+// 6) Onboarding does NOT consume the pending claim.
+clearPending();
+submit(T, "/tmp/ccb-e2e/pt");
+const onboard = await mcp("/tmp/ccb-e2e/pt", (c) => callText(c, "bridge_start", { adapter: "telegram" }));
+assert(/botToken/i.test(onboard) && /BotFather/i.test(onboard), "telegram onboarding guidance returned");
+assert(fs.existsSync(path.join(PENDING, `${T}.json`)), "onboarding did NOT consume the pending claim");
+
+// 7) Legacy skew: no pending record (old hook) -> bounded fallback still starts.
+clearPending();
+legacySubmit(L, WL);
+const legacy = await mcp(WL, (c) => callText(c, "bridge_start", { title: "legacy", adapter: ADAPTER }));
+console.log("START L (legacy):", legacy.slice(0, 120));
+const mL = readConvMarker(L);
+assert(!!mL && mL.conversationId === L, `legacy fallback binds real id ${L}`);
+assert(/legacy handshake/i.test(legacy), "legacy start warns about out-of-date hooks");
+
+// 8) No random-uuid markers were ever minted by this run.
+const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.json$/i;
+let mintedUuids = 0;
+try {
+  for (const f of fs.readdirSync(CONV)) {
+    if (!uuidRe.test(f)) continue;
+    // Only count ones freshly created during this run.
+    const st = fs.statSync(path.join(CONV, f));
+    if (st.mtimeMs >= stamp) mintedUuids++;
+  }
+} catch {}
+assert(mintedUuids === 0, `no random-uuid conv markers minted during the run (found ${mintedUuids})`);
+
+// Cleanup.
+clearPending();
 await daemonStop(A);
 await daemonStop(B);
+await daemonStop(M);
+await daemonStop(L);
 
 console.log(failures === 0 ? "\nALL E2E CHECKS PASSED" : `\n${failures} E2E CHECK(S) FAILED`);
 process.exit(failures === 0 ? 0 : 1);

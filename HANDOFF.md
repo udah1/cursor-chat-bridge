@@ -9,6 +9,37 @@ npm: **`cursor-telegram-chat`** — published, `0.1.0` is live (tag `latest`).
 Local dev path on the original machine: `~/personal-dev/cursor-chat-bridge` (don't hardcode
 this anywhere user-facing).
 
+## Identity model (2026-07-19) — claim-by-conversation-id, fail-closed
+
+The MCP can't see Cursor's `conversation_id`, so identity flows through markers under
+`~/.cursor/chat-bridge/markers/`:
+
+- **`beforeSubmitPrompt`** writes `pending/<conversation_id>.json` on every REAL submit (atomic
+  temp+rename). This is the **source of truth**. The injection guard now runs BEFORE any writes,
+  so a stop-hook re-arm/reply injection writes nothing (no clobber). `last-submit.json` and
+  `ws/<hash>.json` are still written but are **legacy** (diagnostics + upgrade-skew fallback only).
+- **`bridge_start`** claims the single fresh pending record (`pending/ → claiming/ → finalize`
+  two-phase, so concurrent starts can't grab the same one), keys the session by the REAL
+  `conversation_id`, and uses the **claim's** workspace — never its own `BRIDGE_WORKSPACE` (which
+  can be misrouted under a shared MCP). It **never mints** a random id. It **fails closed** with
+  distinct guidance when there is no fresh handshake (`empty`), when it's stale/already-claimed
+  (`stale`), or when >1 chat submitted at once (`ambiguous`). Register happens before finalize, so
+  a failed register restores the pending record for a retry. Passing `session` to `bridge_start`
+  is the idempotent RE-start fast-path (keeps the existing thread).
+- **Non-start tools now REQUIRE `session`** (schema `required` + loud error). The old
+  module-level `activeConversationId` cache and the recency/workspace fallbacks are **gone** — they
+  were the source of cross-session bleed under a shared/misrouted MCP process.
+- **`handshakeFreshMs`** (config / `BRIDGE_HANDSHAKE_FRESH_MS`, default 600000) only gates
+  stale→fail-closed; it does NOT decide which conversation wins (the single fresh pending does).
+- **Upgrade skew**: if `pending/` is empty (an old hook), `bridge_start` falls back to the legacy
+  `ws`/`last-submit` pointer once (with a deprecation note); installer stamps
+  `app-version.json` and tells you to FULLY quit+reopen Cursor; `chat-bridge doctor` enumerates
+  MCP-process workspaces, pending/claim health, orphaned claims, and version skew.
+
+Tests: `test/markers.test.ts` (unit) + `scripts/e2e-conv.mjs` (misrouted-still-binds,
+ambiguous/stale fail-closed, required-session, legacy fallback, no-uuid-minted) +
+`scripts/mcp-smoke.mjs` (writes a pending record first).
+
 ## Current status (2026-07-15)
 
 Shipped and on npm. Install anywhere with `npx cursor-telegram-chat@latest install` (no clone).

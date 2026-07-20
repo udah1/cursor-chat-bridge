@@ -11,11 +11,19 @@ Legend: [ ] open · [x] done · [~] partial/in-progress
   The self-contained installer (`chat-bridge install`) is verified in an isolated `$HOME`
   (files land correctly), but a real Cursor window loading the MCP + hooks from
   `~/.cursor/chat-bridge/app` still needs a manual smoke test after reload.
-- [ ] **Same-workspace, multi-conversation** relies on the agent passing the `session` handle
-  on every `bridge_*` call. If the agent forgets, resolution falls back to the per-workspace
-  pointer (correct for the *most recent* submit in that workspace) — good enough, but not
-  bulletproof for two very-concurrent chats in one window. Consider making `session` required
-  on non-start tools if we ever see cross-talk again.
+- [x] **Same-workspace, multi-conversation cross-talk — FIXED (2026-07-19).** `session` is now
+  **required** on all non-start tools; the module-level `activeConversationId` cache and the
+  recency/workspace fallbacks are removed. Identity is claimed by the real `conversation_id` from
+  a per-conversation `pending/` record; ambiguous/stale/missing handshakes fail closed instead of
+  guessing. See HANDOFF "Identity model". Covered by `test/markers.test.ts` + `scripts/e2e-conv.mjs`
+  (incl. a misrouted-MCP case). Still needs one live post-reload smoke (below).
+- [ ] **Live post-reload verification of the new identity model** — unit + e2e pass against a
+  running daemon, but confirm on a real Cursor reload: hooks write `markers/pending/<id>.json` on
+  submit; `bridge_start` binds that id (not a uuid); `chat-bridge doctor` shows the right
+  per-window `BRIDGE_WORKSPACE`. Ordered rollout: `npx cursor-telegram-chat@latest install` →
+  FULLY quit+reopen Cursor → check a submit writes `pending/` → `chat-bridge doctor` →
+  `node scripts/e2e-conv.mjs` → live "start remote chat mode". One-time cleanup of any pre-upgrade
+  cruft is safe: `rm -f ~/.cursor/chat-bridge/markers/claiming/*.json` (when no start is in flight).
 - [ ] **Workspace = "none"** (a Cursor window with no folder open): `BRIDGE_WORKSPACE`
   resolves empty and we fall back to `process.cwd()` of the MCP process. Session keying is
   weaker in that edge case. Low priority.

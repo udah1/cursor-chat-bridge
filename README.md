@@ -194,16 +194,22 @@ Sessions are keyed by Cursor's **`conversation_id`** so each conversation maps t
 thread. Cursor gives `conversation_id` to hooks but **not** to MCP tool calls, so the MCP learns it
 through a small handshake:
 
-1. `beforeSubmitPrompt` records `{conversationId, workspace}` right before the agent runs.
-2. `bridge_start` reads that handshake, keys the session by `conversation_id`, and returns a
-   **session handle**.
-3. The agent passes `session=<handle>` on every subsequent `bridge_*` call — the reliable signal
-   that keeps **two conversations in the same workspace** on separate threads.
-4. Fallbacks if no handle is passed: in-process cache → per-workspace pointer
-   (`BRIDGE_WORKSPACE`) → most recent submit.
+1. `beforeSubmitPrompt` writes a per-conversation **pending-start** record
+   (`markers/pending/<conversation_id>.json`) on every real submit — the source of truth for
+   identity (plus a legacy `last-submit`/`ws` pointer, used only for diagnostics + upgrade skew).
+2. `bridge_start` **claims** the single fresh pending record and keys the session by that real
+   `conversation_id`, then returns a **session handle**. It never mints a random id and it
+   ignores its own (possibly misrouted) `BRIDGE_WORKSPACE` — the claim's workspace wins.
+3. `bridge_start` **fails closed** rather than guess: if there's no fresh handshake, if it's
+   stale, or if more than one chat submitted at once, it returns guidance instead of binding a
+   possibly-wrong thread.
+4. The agent passes `session=<handle>` on every subsequent `bridge_*` call — now **required** (no
+   recency/cache fallback), so two conversations in the same workspace can never cross threads.
 
 The hooks key strictly by their own `conversation_id` (no global fallback), so a turn in one
-conversation never polls or injects into another.
+conversation never polls or injects into another. Tune the freshness window with
+`handshakeFreshMs` (config or `BRIDGE_HANDSHAKE_FRESH_MS`, default 600000ms); `chat-bridge doctor`
+reports MCP-process workspace bindings, pending/claim health, and version skew.
 </details>
 
 <details>

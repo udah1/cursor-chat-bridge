@@ -1,22 +1,35 @@
 #!/usr/bin/env node
-import crypto from "node:crypto";
 import fs from "node:fs";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { daemonRequest } from "./daemonClient.js";
-import { loadConfig } from "./config.js";
-import { readMarker, writeMarker, clearMarker, readLastSubmit, readWsPointer } from "./markers.js";
+import { loadConfig, type BridgeConfig } from "./config.js";
+import {
+  readMarker,
+  writeMarker,
+  clearMarker,
+  claimStartConversation,
+  finalizeClaim,
+  restoreClaim,
+  resolveActiveConversation,
+  legacyResolve,
+} from "./markers.js";
 import { checkAdapterConfig } from "./onboarding.js";
 import { LOG_PATH, ensureRuntimeDir } from "./paths.js";
 import { checkForUpdate, currentVersion, packageName } from "./version.js";
 
-// Cursor resolves ${workspaceFolder} per window; falls back to cwd if not provided.
+// Cursor resolves ${workspaceFolder} per window; falls back to cwd if not provided. Used only
+// for the legacy upgrade-skew fallback and as a title/cwd default — NOT to key the session
+// (which is claimed by the real conversation id, so misrouting can't bind the wrong workspace).
 const WORKSPACE = process.env.BRIDGE_WORKSPACE || process.cwd();
 
-// The conversation this MCP process most recently started bridge mode for. Primary key so
-// end-of-turn tool calls resolve to the right session even under multi-window concurrency.
-let activeConversationId: string | null = null;
+const DEFAULT_FRESH_MS = 600000;
+
+function handshakeFreshMs(cfg: BridgeConfig): number {
+  const v = Number((cfg as any).handshakeFreshMs);
+  return Number.isFinite(v) && v > 0 ? v : DEFAULT_FRESH_MS;
+}
 
 function debug(msg: string): void {
   try {
@@ -25,35 +38,59 @@ function debug(msg: string): void {
   } catch {}
 }
 
-/**
- * Resolve the session for non-start tools. Priority:
- *  1. explicit `session` handle the agent carries from bridge_start (disambiguates multiple
- *     conversations in the SAME workspace / shared MCP process — the only fully reliable signal),
- *  2. in-process cache, 3. per-workspace pointer, 4. most recent submit.
- */
-function resolveConversationId(explicit?: unknown): string | null {
-  if (explicit) return String(explicit);
-  if (activeConversationId) return activeConversationId;
-  const ws = readWsPointer(WORKSPACE)?.conversationId;
-  if (ws && readMarker(ws)?.active) return ws;
-  // last-submit is a single global file; only trust it if it was written for OUR workspace,
-  // otherwise a different Cursor window's submit could hijack this conversation.
-  const ls = readLastSubmit();
-  if (ls?.conversationId && ls.workspace === WORKSPACE && readMarker(ls.conversationId)?.active) {
-    return ls.conversationId;
-  }
-  return null;
-}
-
 function text(s: string) {
   return { content: [{ type: "text", text: s }] };
+}
+
+function updateNote(update: { current: string; latest?: string; updateAvailable: boolean }): string {
+  return update.updateAvailable
+    ? `\n\n⬆️ UPDATE AVAILABLE: ${update.current} → ${update.latest}. Before continuing, tell the user and ask ` +
+        `(via the normal Cursor question UI — the remote loop hasn't started) whether to update now with ` +
+        `\`npx ${packageName()}@latest install\` (then reload Cursor). If they decline, continue normally.`
+    : "";
+}
+
+function startReply(adapter: string, thread: string | null | undefined, conversationId: string, extra: string): string {
+  return (
+    `remote chat mode ON via "${adapter}". Thread ${thread}. ` +
+    `Your session handle is "${conversationId}". IMPORTANT: pass session="${conversationId}" to every ` +
+    `subsequent bridge_* call so this conversation stays on its own thread. At the end of each turn send a ` +
+    `summary + question with bridge_send_and_await (put the message in the "text" argument), act on the reply, ` +
+    `and do not use the Options/Questions UI.` +
+    extra
+  );
+}
+
+/** Fail-closed guidance when bridge_start can't unambiguously identify the conversation. */
+function failClosedMessage(reason: "empty" | "stale" | "ambiguous", freshMs: number): string {
+  if (reason === "empty") {
+    return (
+      "remote chat mode: no submit handshake was found for this turn, so I can't bind this chat to its own " +
+      "thread (I won't guess — that risks hijacking another chat's thread). This usually means the chat-bridge " +
+      "hooks aren't installed or Cursor hasn't loaded them yet. Fix: run `npx " +
+      packageName() +
+      "@latest install`, then FULLY quit and reopen Cursor (not just reload), and say “start remote chat mode” again."
+    );
+  }
+  if (reason === "stale") {
+    return (
+      "remote chat mode: the submit handshake for this turn was stale or already claimed, so I can't safely bind " +
+      `this chat. Re-send your “start remote chat mode” message from THIS chat and call bridge_start again ` +
+      `(handshakes are considered fresh for ${Math.round(freshMs / 1000)}s; raise config.handshakeFreshMs if needed).`
+    );
+  }
+  return (
+    "remote chat mode: more than one chat in this same project folder submitted at nearly the same moment, so I " +
+    "can't tell which one to bind without risking crossing threads. Re-send “start remote chat mode” from just " +
+    "THIS chat (wait a beat so it's the only pending submit in this folder) and call bridge_start again — I won't guess."
+  );
 }
 
 const SESSION_ARG = {
   type: "string",
   description:
-    "The session handle returned by bridge_start for THIS conversation. Always pass it so the right chat thread " +
-    "is used (required to keep multiple conversations in the same workspace separate).",
+    "REQUIRED. The session handle returned by bridge_start for THIS conversation. Always pass it so the right chat " +
+    "thread is used and multiple conversations (even in the same workspace) stay separate.",
 };
 
 const TEXT_ARG = { type: "string", description: "The message text to post to the chat thread." };
@@ -78,6 +115,12 @@ const TOOLS = [
             "the folder name if omitted.",
         },
         adapter: { type: "string", description: "Override the channel adapter (github|telegram|discord)." },
+        session: {
+          type: "string",
+          description:
+            "Optional. Only when RE-starting an existing session (idempotent re-arm) — pass the handle you got " +
+            "from a previous bridge_start. Omit for a brand-new start.",
+        },
       },
     },
   },
@@ -85,38 +128,44 @@ const TOOLS = [
     name: "bridge_send",
     description:
       "Post a message (e.g. a turn summary or a question) to this conversation's chat thread. Put the message in " +
-      "the `text` argument (alias: `message`). Pass the `session` handle returned by bridge_start.",
+      "the `text` argument (alias: `message`). Pass the `session` handle returned by bridge_start (required).",
     inputSchema: {
       type: "object",
       properties: { text: TEXT_ARG, message: TEXT_ARG, session: SESSION_ARG },
+      required: ["session"],
     },
   },
   {
     name: "bridge_await",
     description:
       "Block waiting for the user's reply in the chat thread (single long-poll window). Returns the reply text, " +
-      "or status 'timeout' (call again to keep waiting) or 'stopped' (mode ended). Pass the `session` handle from bridge_start.",
-    inputSchema: { type: "object", properties: { maxBlockMs: { type: "number" }, session: SESSION_ARG } },
+      "or status 'timeout' (call again to keep waiting) or 'stopped' (mode ended). Pass the `session` handle from bridge_start (required).",
+    inputSchema: {
+      type: "object",
+      properties: { maxBlockMs: { type: "number" }, session: SESSION_ARG },
+      required: ["session"],
+    },
   },
   {
     name: "bridge_send_and_await",
     description:
       "Post a message then block for the user's reply. Convenience for end-of-turn summary + question. Put the " +
-      "message in the `text` argument (alias: `message`). Pass the `session` handle returned by bridge_start.",
+      "message in the `text` argument (alias: `message`). Pass the `session` handle returned by bridge_start (required).",
     inputSchema: {
       type: "object",
       properties: { text: TEXT_ARG, message: TEXT_ARG, maxBlockMs: { type: "number" }, session: SESSION_ARG },
+      required: ["session"],
     },
   },
   {
     name: "bridge_stop",
-    description: "Stop remote chat mode for this conversation. Pass the `session` handle from bridge_start.",
-    inputSchema: { type: "object", properties: { session: SESSION_ARG } },
+    description: "Stop remote chat mode for this conversation. Pass the `session` handle from bridge_start (required).",
+    inputSchema: { type: "object", properties: { session: SESSION_ARG }, required: ["session"] },
   },
   {
     name: "bridge_status",
-    description: "Show remote chat mode status for this conversation. Pass the `session` handle from bridge_start.",
-    inputSchema: { type: "object", properties: { session: SESSION_ARG } },
+    description: "Show remote chat mode status for this conversation. Pass the `session` handle from bridge_start (required).",
+    inputSchema: { type: "object", properties: { session: SESSION_ARG }, required: ["session"] },
   },
 ];
 
@@ -133,49 +182,74 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     if (name === "bridge_start") {
       const adapter = args.adapter || cfg.activeAdapter;
 
-      // Onboard the user if the chosen channel isn't fully configured.
+      // Onboard the user if the chosen channel isn't fully configured (no side effects).
       const check = checkAdapterConfig(adapter, cfg);
       if (!check.ok) return text(check.guidance ?? `Adapter "${adapter}" is not configured.`);
 
-      // Best-effort "is there a newer release?" check, run in parallel with registration so it
-      // doesn't add latency. Surfaced in the response for the agent to raise with the user.
+      // Best-effort "is there a newer release?" check, run in parallel so it adds no latency.
       const updatePromise = checkForUpdate().catch(
         () => ({ current: currentVersion(), latest: undefined, updateAvailable: false })
       );
 
-      // Learn this conversation's id from the beforeSubmit handshake (written moments ago).
-      // Priority matters under concurrent windows:
-      //   1. explicit `session` the agent supplied (fully reliable),
-      //   2. the PER-WORKSPACE pointer — each window's hook writes ws/<hash(workspace)>.json, so
-      //      this is race-free across windows (unlike last-submit.json which is a single global
-      //      file every window overwrites),
-      //   3. last-submit ONLY if its workspace matches ours (so a different window's submit can't
-      //      hijack our id),
-      //   4. a fresh random id as a last resort.
-      // CRITICAL: only trust the handshake pointers if they are FRESH. The hook stamps them right
-      // before the agent runs, so a genuine "start remote chat" submit produces a pointer that is
-      // seconds old. A stale pointer means the hook didn't fire for THIS chat (hooks not installed,
-      // or an old/partial setup) — in that case we must NOT inherit the previous chat's session
-      // (which would reuse its Telegram thread). Mint a fresh id instead so every Cursor chat maps
-      // to its own unique thread.
-      const HANDSHAKE_FRESH_MS = 5 * 60 * 1000;
       const now = Date.now();
-      const ls = readLastSubmit();
-      const wsp = readWsPointer(WORKSPACE);
-      const wsFresh =
-        wsp?.conversationId && now - (wsp.at ?? 0) < HANDSHAKE_FRESH_MS ? wsp.conversationId : null;
-      const lsFresh =
-        ls?.conversationId && ls.workspace === WORKSPACE && now - (ls.at ?? 0) < HANDSHAKE_FRESH_MS
-          ? ls.conversationId
-          : null;
-      const conversationId =
-        (args.session ? String(args.session) : null) ?? wsFresh ?? lsFresh ?? crypto.randomUUID();
-      const workspace = WORKSPACE || ls?.workspace || "";
-      const title = args.title || workspace.split("/").pop() || "cursor-session";
-      debug(`bridge_start workspace=${workspace} conversationId=${conversationId} adapter=${adapter}`);
+      const freshMs = handshakeFreshMs(cfg);
 
-      const r = await daemonRequest("POST", "/register", { sessionId: conversationId, title, cwd: workspace, adapter });
-      activeConversationId = conversationId;
+      // (a) Explicit-session RE-start fast-path: idempotent re-arm of a known session, keeps its
+      //     existing thread. Never consumes a pending claim.
+      if (args.session) {
+        const sid = String(args.session);
+        const existing = readMarker(sid);
+        if (existing) {
+          const reAdapter = existing.adapter || adapter;
+          const title = args.title || existing.workspace.split("/").pop() || "cursor-session";
+          const r = await daemonRequest("POST", "/register", {
+            sessionId: sid,
+            title,
+            cwd: existing.workspace,
+            adapter: reAdapter,
+          });
+          writeMarker({
+            ...existing,
+            adapter: reAdapter,
+            thread: r.thread?.thread ?? existing.thread,
+            active: true,
+            updatedAt: Date.now(),
+          });
+          const update = await updatePromise;
+          return text(startReply(reAdapter, r.thread?.thread ?? existing.thread, sid, updateNote(update)));
+        }
+        // session given but unknown -> fall through to a fresh claim.
+      }
+
+      // (b) Claim the fresh pending record for THIS window's workspace by its REAL conversation id.
+      let claim = claimStartConversation(now, freshMs, WORKSPACE);
+      let legacy = false;
+      if ("none" in claim && claim.none === "empty") {
+        // Upgrade skew: an old hook that predates pending/ records. Bounded legacy fallback.
+        const lr = legacyResolve(now, freshMs, WORKSPACE);
+        if (lr) {
+          claim = { conversationId: lr.conversationId, workspace: lr.workspace };
+          legacy = true;
+        }
+      }
+      if ("none" in claim) return text(failClosedMessage(claim.none, freshMs));
+
+      const conversationId = claim.conversationId;
+      const workspace = claim.workspace || WORKSPACE || "";
+      const title = args.title || workspace.split("/").pop() || "cursor-session";
+      debug(`bridge_start workspace=${workspace} conversationId=${conversationId} adapter=${adapter} legacy=${legacy}`);
+
+      // (c) Register FIRST; only finalize the claim once the daemon accepted it, so a failed
+      //     register leaves the pending record intact for a retry.
+      let r;
+      try {
+        r = await daemonRequest("POST", "/register", { sessionId: conversationId, title, cwd: workspace, adapter });
+      } catch (e: any) {
+        if (!legacy) restoreClaim(conversationId);
+        return text(`error: could not register remote session (${e?.message ?? e}). Please call bridge_start again.`);
+      }
+      if (!legacy) finalizeClaim(conversationId);
+
       writeMarker({
         conversationId,
         sessionId: conversationId,
@@ -189,25 +263,27 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         sessionId: conversationId,
         text: `🟢 *remote chat mode on* for \`${title}\`. I'll post summaries here; reply to steer me. Say \`stop\` to end.`,
       }).catch(() => {});
-      const update = await updatePromise;
-      const updateNote = update.updateAvailable
-        ? `\n\n⬆️ UPDATE AVAILABLE: ${update.current} → ${update.latest}. Before continuing, tell the user and ask ` +
-          `(via the normal Cursor question UI — the remote loop hasn't started) whether to update now with ` +
-          `\`npx ${packageName()}@latest install\` (then reload Cursor). If they decline, continue normally.`
-        : "";
 
-      return text(
-        `remote chat mode ON via "${adapter}". Thread ${r.thread?.thread}. ` +
-          `Your session handle is "${conversationId}". IMPORTANT: pass session="${conversationId}" to every ` +
-          `subsequent bridge_* call so this conversation stays on its own thread. At the end of each turn send a ` +
-          `summary + question with bridge_send_and_await (put the message in the "text" argument), act on the reply, ` +
-          `and do not use the Options/Questions UI.` +
-          updateNote
-      );
+      const update = await updatePromise;
+      const legacyNote = legacy
+        ? "\n\n(note: bound via a legacy handshake — your chat-bridge hooks are out of date. Run `npx " +
+          packageName() +
+          "@latest install`, then fully quit and reopen Cursor.)"
+        : "";
+      return text(startReply(adapter, r.thread?.thread, conversationId, updateNote(update)) + legacyNote);
     }
 
-    const conversationId = resolveConversationId(args.session);
-    if (!conversationId) return text("remote chat mode is not active for this conversation. Call bridge_start first.");
+    // --- Non-start tools: session is REQUIRED (no recency/cache fallback) --------------------
+    const conversationId = resolveActiveConversation(args.session);
+    if (!conversationId) {
+      return text(
+        args.session
+          ? `remote chat mode: unknown session "${String(args.session)}" — no active session for that handle. ` +
+              `Call bridge_start for this conversation first.`
+          : `remote chat mode: missing required 'session'. Pass session=<the handle returned by bridge_start> to ` +
+              `${name}. If you haven't started yet, call bridge_start first.`
+      );
+    }
 
     if (name === "bridge_send") {
       await daemonRequest("POST", "/send", { sessionId: conversationId, text: String(args.text ?? args.message ?? "") });
@@ -227,7 +303,6 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       );
       if (r.stopped) {
         clearMarker(conversationId);
-        if (activeConversationId === conversationId) activeConversationId = null;
         return text(JSON.stringify({ status: "stopped", messages: r.messages ?? [] }));
       }
       if (r.messages?.length) {
@@ -240,7 +315,6 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     if (name === "bridge_stop") {
       await daemonRequest("POST", "/stop", { sessionId: conversationId }).catch(() => {});
       clearMarker(conversationId);
-      if (activeConversationId === conversationId) activeConversationId = null;
       return text("remote chat mode OFF for this conversation.");
     }
 

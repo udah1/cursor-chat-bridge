@@ -16,11 +16,13 @@ const CONFIG_PATH = path.join(RUNTIME, "config.json");
 const MARKERS = path.join(RUNTIME, "markers");
 const CONV_DIR = path.join(MARKERS, "conv");
 const WS_DIR = path.join(MARKERS, "ws");
+const PENDING_DIR = path.join(MARKERS, "pending");
 const LAST_SUBMIT = path.join(MARKERS, "last-submit.json");
 const DAEMON_FILE = path.join(RUNTIME, "daemon.json");
 const DEBUG_LOG = path.join(RUNTIME, "hook-stdin.log");
 const EXPECT_INJECTION = path.join(RUNTIME, "expect-injection");
 const INJECTION_WINDOW_MS = 15000;
+const DEFAULT_FRESH_MS = 600000;
 
 function readStdin() {
   try {
@@ -42,8 +44,29 @@ function wsHash(ws) {
 function writeJSON(p, obj) {
   try {
     fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(p, JSON.stringify(obj, null, 2));
+    // Atomic: write to a unique temp file then rename, so a concurrent reader never sees a torn file.
+    const tmp = `${p}.tmp-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
+    fs.writeFileSync(tmp, JSON.stringify(obj, null, 2));
+    fs.renameSync(tmp, p);
   } catch {}
+}
+/** Best-effort prune of pending-start records older than freshMs (bounds accumulation). */
+function prunePending(freshMs) {
+  let files = [];
+  try {
+    files = fs.readdirSync(PENDING_DIR).filter((f) => f.endsWith(".json") && !f.includes(".tmp-"));
+  } catch {
+    return;
+  }
+  const now = Date.now();
+  for (const f of files) {
+    const rec = readJSON(path.join(PENDING_DIR, f));
+    if (!rec || typeof rec.at !== "number" || now - rec.at >= freshMs) {
+      try {
+        fs.rmSync(path.join(PENDING_DIR, f), { force: true });
+      } catch {}
+    }
+  }
 }
 function readConvMarker(conversationId) {
   if (!conversationId) return null;
@@ -99,19 +122,14 @@ async function main() {
 
   const conversationId = payload?.conversation_id;
   const workspace = Array.isArray(payload?.workspace_roots) ? payload.workspace_roots[0] : null;
+  const cfg = readJSON(CONFIG_PATH) || {};
+  const freshMs = Number.isFinite(Number(cfg.handshakeFreshMs)) && Number(cfg.handshakeFreshMs) > 0
+    ? Number(cfg.handshakeFreshMs)
+    : DEFAULT_FRESH_MS;
 
-  // (1) Handshake: always record the current submit context so bridge_start can key by conversation.
-  if (conversationId) {
-    writeJSON(LAST_SUBMIT, { conversationId, workspace: workspace ?? null, at: Date.now() });
-    if (workspace) writeJSON(path.join(WS_DIR, `${wsHash(workspace)}.json`), { conversationId, at: Date.now() });
-  }
-
-  // (2) Off-switch: only relevant if remote chat mode is active for this conversation.
-  const marker = readConvMarker(conversationId);
-  if (!marker || !marker.active) process.exit(0);
-
-  // Injection guard: if the stop hook just re-injected a remote reply, this "submit" is not a
-  // real user keystroke -> keep remote chat mode on.
+  // Injection guard FIRST: a stop-hook re-arm / reply injection is NOT a real user submit.
+  // It must write NO handshake (writing one would clobber another window's pending identity)
+  // and must NOT disable remote chat mode.
   const expect = readJSON(EXPECT_INJECTION);
   if (expect && expect.conversationId === conversationId && Date.now() - expect.at < INJECTION_WINDOW_MS) {
     try {
@@ -120,9 +138,23 @@ async function main() {
     process.exit(0);
   }
 
+  // (1) Handshake: record this real submit so bridge_start can CLAIM it by conversation id.
+  // The per-conversation pending record is the source of truth; last-submit/ws are kept for
+  // diagnostics and upgrade-skew fallback only.
+  if (conversationId) {
+    const at = Date.now();
+    writeJSON(LAST_SUBMIT, { conversationId, workspace: workspace ?? null, at });
+    if (workspace) writeJSON(path.join(WS_DIR, `${wsHash(workspace)}.json`), { conversationId, at });
+    writeJSON(path.join(PENDING_DIR, `${conversationId}.json`), { conversationId, workspace: workspace ?? null, at });
+    prunePending(freshMs);
+  }
+
+  // (2) Off-switch: only relevant if remote chat mode is active for this conversation.
+  const marker = readConvMarker(conversationId);
+  if (!marker || !marker.active) process.exit(0);
+
   // Off-switch opt-out: if the user set stopRemoteChatOnLocalMessage=false, keep remote chat
   // mode ON even when they type locally in Cursor (default is true -> stop).
-  const cfg = readJSON(CONFIG_PATH) || {};
   if (cfg.stopRemoteChatOnLocalMessage === false) process.exit(0);
 
   // Real user submit in Cursor -> disable remote chat mode and notify the thread.

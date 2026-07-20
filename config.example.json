@@ -8,6 +8,7 @@
   "caCertPath": "",
   "requireConfirmForDestructive": true,
   "stopRemoteChatOnLocalMessage": true,
+  "handshakeFreshMs": 600000,
   "adapters": {
     "github": {
       "owner": "udah1",

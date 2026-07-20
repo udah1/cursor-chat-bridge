@@ -27,10 +27,17 @@ On activation:
    named a platform (Telegram/GitHub/Discord). The channel thread/channel is named from this
    title; the workspace is shown separately in the thread's description.
 2. **Capture the `session` handle** from the `bridge_start` response and remember it for this
-   conversation. Pass `session=<handle>` to **every** subsequent `bridge_*` call — this is what
-   keeps multiple conversations (even in the same workspace) on their own separate threads.
+   conversation. Passing `session=<handle>` is now **REQUIRED** on every subsequent `bridge_*`
+   call (`bridge_send`, `bridge_await`, `bridge_send_and_await`, `bridge_stop`, `bridge_status`) —
+   they error without it. This is what keeps multiple conversations (even in the same workspace)
+   on their own separate threads. To RE-start an existing session, pass that same handle back to
+   `bridge_start`.
 3. If `bridge_start` returns setup guidance instead (channel not configured), follow it to
-   onboard the user, then call `bridge_start` again.
+   onboard the user, then call `bridge_start` again. If it returns a **fail-closed** message
+   (no submit handshake / stale / more than one chat submitted at once), do NOT retry blindly:
+   follow its guidance — usually re-send “start remote chat mode” from just THIS chat, or run
+   `npx cursor-telegram-chat@latest install` then FULLY quit + reopen Cursor if hooks aren't
+   loaded. bridge_start never guesses an identity, so it won't cross threads.
 4. If the `bridge_start` response includes an **UPDATE AVAILABLE** note, mention it and ask the
    user — via the normal Cursor question UI (the remote loop hasn't started yet) — whether to
    update now with `npx cursor-telegram-chat@latest install` (then reload Cursor). If they

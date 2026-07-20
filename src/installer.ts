@@ -121,6 +121,16 @@ export function runInstall(): void {
   //     the npx cache it came from is evicted. Without this the copied dist can't be run directly.
   installRuntimeDeps(root);
 
+  // 1c. Stamp the installed version so `chat-bridge doctor` can flag upgrade skew (a running
+  //     MCP/hook from an OLDER install that predates the pending/ claim protocol).
+  {
+    const rootPkg = readJSON<any>(path.join(root, "package.json"), {});
+    writeJSON(path.join(RUNTIME_DIR, "app-version.json"), {
+      version: rootPkg.version ?? "0.0.0",
+      installedAt: Date.now(),
+    });
+  }
+
   const node = process.execPath;
   const mcpEntry = path.join(APP_DIR, "dist", "mcp.js");
   const stopHook = path.join(APP_DIR, "hooks", HOOK_STOP);
@@ -182,7 +192,8 @@ export function runInstall(): void {
       "",
       "Done. Next:",
       `  1. Edit ${CONFIG_PATH} (choose an adapter and add credentials), or set BRIDGE_* env vars.`,
-      "  2. Reload/restart Cursor to load the MCP server + hooks.",
+      "  2. FULLY quit Cursor (Cmd/Ctrl+Q — not just window reload) and reopen it, so the new MCP",
+      "     server AND the new hooks are loaded. A reload alone can leave old hooks running.",
       "  3. In any chat say \"start remote chat mode\" (any language).",
       "",
       "Validate anytime with: chat-bridge doctor",
