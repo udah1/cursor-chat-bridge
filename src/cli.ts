@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { Daemon } from "./daemon.js";
 import { CONFIG_PATH, HOOK_DEBUG_PATH, MARKERS_DIR, RUNTIME_DIR, ensureRuntimeDir } from "./paths.js";
 import { loadConfig, saveConfig } from "./config.js";
@@ -11,6 +11,22 @@ import { daemonRequest, isAlive, readDaemonFile } from "./daemonClient.js";
 import { runInstall, runUninstall } from "./installer.js";
 import { currentVersion } from "./version.js";
 import { log } from "./logger.js";
+
+/**
+ * Re-exec this command with the configured CA bundle trusted. Node reads NODE_EXTRA_CA_CERTS once
+ * at startup, so assigning `process.env` after boot is a no-op — on a TLS-intercepting machine that
+ * made `doctor` report the adapter as broken (SELF_SIGNED_CERT_IN_CHAIN) even though the daemon,
+ * which is spawned with the variable already set, worked fine. No-op when there's nothing to add.
+ */
+function reexecWithCa(caCertPath?: string): void {
+  if (!caCertPath || process.env.NODE_EXTRA_CA_CERTS) return;
+  if (!fs.existsSync(caCertPath)) return; // bad path: carry on and let the real error surface
+  const r = spawnSync(process.execPath, process.argv.slice(1), {
+    stdio: "inherit",
+    env: { ...process.env, NODE_EXTRA_CA_CERTS: caCertPath },
+  });
+  process.exit(r.status ?? 0);
+}
 
 /** Best-effort: find running MCP processes and the workspace each is bound to (BRIDGE_WORKSPACE). */
 function findMcpProcesses(): { pid: number; workspace: string }[] {
@@ -158,11 +174,10 @@ async function main() {
     }
 
     case "daemon": {
-      // Ensure the CA cert is trusted for outbound HTTPS (this machine intercepts TLS).
+      // Ensure the CA cert is trusted for outbound HTTPS (this machine intercepts TLS). Normally
+      // ensureDaemon() already spawns us with it set, so this only kicks in for a manual run.
       const cfg = loadConfig();
-      if ((cfg.caCertPath || process.env.NODE_EXTRA_CA_CERTS) && !process.env.NODE_EXTRA_CA_CERTS) {
-        process.env.NODE_EXTRA_CA_CERTS = cfg.caCertPath;
-      }
+      reexecWithCa(cfg.caCertPath);
       const d = new Daemon();
       const { port } = await d.start();
       log(`daemon ready on ${port}`);
@@ -189,9 +204,7 @@ async function main() {
     case "doctor": {
       const cfg = loadConfig();
       // Trust the corporate CA for the adapter's outbound HTTPS check (same as the daemon does).
-      if (cfg.caCertPath && !process.env.NODE_EXTRA_CA_CERTS) {
-        process.env.NODE_EXTRA_CA_CERTS = cfg.caCertPath;
-      }
+      reexecWithCa(cfg.caCertPath);
       console.log(`config: ${CONFIG_PATH}`);
       console.log(`activeAdapter: ${cfg.activeAdapter}`);
       console.log(`pollIntervalMs: ${cfg.pollIntervalMs} (min ${cfg.minPollIntervalMs})`);
@@ -231,7 +244,15 @@ async function main() {
         await a.init();
         console.log(`\nadapter "${cfg.activeAdapter}": OK ✅`);
       } catch (e: any) {
-        console.log(`\nadapter "${cfg.activeAdapter}": FAILED ❌ ${e?.message ?? e}`);
+        // undici collapses every network error to "fetch failed"; the cause is the useful part.
+        const code = e?.cause?.code ?? e?.cause?.message;
+        console.log(`\nadapter "${cfg.activeAdapter}": FAILED ❌ ${e?.message ?? e}${code ? ` (${code})` : ""}`);
+        if (String(code).includes("SELF_SIGNED_CERT")) {
+          console.log(
+            "  TLS is being intercepted and the interceptor's root cert isn't trusted. Point " +
+              "`caCertPath` in the config (or NODE_EXTRA_CA_CERTS) at a PEM bundle containing it."
+          );
+        }
         process.exitCode = 1;
       }
       break;
