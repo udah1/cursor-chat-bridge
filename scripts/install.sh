@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Local/dev install: build from source, then wire into ~/.cursor via the CLI installer.
-# End users don't need this — they can just run: npx cursor-chat-bridge@latest install
+# End users don't need this — they can just run: npx cursor-telegram-chat@latest install
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$DIR"

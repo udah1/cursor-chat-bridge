@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Self-contained installer used by `chat-bridge install` (i.e. `npx cursor-chat-bridge install`).
+ * Self-contained installer used by `chat-bridge install` (i.e. `npx cursor-telegram-chat install`).
  *
  * It copies the packaged runtime (dist + hooks) into ~/.cursor/chat-bridge/app and wires the
  * Cursor integration points to those local paths, so the tool keeps working even if the npx

@@ -70,7 +70,7 @@ Legend: [ ] open · [x] done · [~] partial/in-progress
 - [x] **Stale-stop**: re-activating a stopped session now resets stop state and opens a fresh
   thread instead of instantly returning `stopped`.
 - [x] **Install without clone**: `chat-bridge install` / `uninstall` copy the runtime into
-  `~/.cursor/chat-bridge/app` and wire mcp.json/hooks.json/rule → `npx cursor-chat-bridge install`.
+  `~/.cursor/chat-bridge/app` and wire mcp.json/hooks.json/rule → `npx cursor-telegram-chat install`.
 
 ## Verification status
 
