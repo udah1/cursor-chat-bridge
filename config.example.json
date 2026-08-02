@@ -41,5 +41,12 @@
     "maxBytes": 26214400,
     "timeoutMs": 60000,
     "keepAudio": true
+  },
+  "ack": {
+    "enabled": false,
+    "language": "auto",
+    "adapters": ["discord", "telegram"],
+    "echoTranscript": true,
+    "maxTranscriptChars": 200
   }
 }

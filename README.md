@@ -56,6 +56,7 @@ looping until you stop it. Step away from the keyboard; keep shipping from your 
 - [How it works](#how-it-works)
 - [Image attachments](#image-attachments)
 - [Voice messages (speech-to-text)](#voice-messages-speech-to-text)
+- [Read receipts (acknowledgments)](#read-receipts-acknowledgments)
 - [Configuration](#configuration)
 - [Environment overrides](#environment-overrides)
 - [The wait loop](#the-wait-loop-stop-hook)
@@ -266,6 +267,46 @@ transcription as if you'd typed it — **off by default**. Enable it under `stt`
 - Transcription runs **asynchronously** in the daemon (never blocks the poll window); the transcript
   is delivered on the next reply cycle. See [`docs/stt-plan.md`](docs/stt-plan.md) for the full design.
 
+## Read receipts (acknowledgments)
+
+Without this, sending a message from your phone is silent until the agent finishes a whole turn — you
+can't tell whether it arrived at all. Turn it on and the **daemon** replies the moment a message
+lands, before any slow work (attachment downloads, transcription). **Off by default:**
+
+```jsonc
+"ack": {
+  "enabled": true,
+  "language": "auto",                     // "auto" matches you; force with "en" or "he"
+  "adapters": ["discord", "telegram"],    // bot-identity channels only (see below)
+  "echoTranscript": true,                 // repeat back what a voice note said
+  "maxTranscriptChars": 200
+}
+```
+
+What you get, per message kind:
+
+| You send | The bridge replies |
+|---|---|
+| text | _Got it, on it…_ |
+| an image | _Got the image, taking a look…_ |
+| a voice note | _Got your voice message, transcribing…_ then _Got your request: "…"_ once transcribed |
+| `stop` | _Remote chat session stopped._ |
+
+The ack comes from the daemon, not the agent — the agent doesn't even see your message until its
+next turn begins, so an agent-authored ack would cost an LLM turn and arrive late.
+
+On `"auto"` the reply matches the language you wrote in: Hebrew text gets a Hebrew reply, and for a
+voice note the transcriber's own detected language decides. Messages with nothing to go on (an
+uncaptioned image, a bare `stop`) reuse the last language you used in that session, defaulting to
+English.
+
+> **Timing:** the daemon only reads the channel while a poll is in flight — that is, while the agent
+> is awaiting a reply or the `stop` hook is waiting. Messages sent while the agent is **mid-turn**
+> aren't seen (and so aren't acked) until it finishes. They're never lost, just delayed.
+
+> **Why not GitHub:** there the agent comments under *your own* account, so an ack would read as you
+> replying to yourself. You can still opt in by adding `"github"` to `adapters`.
+
 ## Configuration
 
 `~/.cursor/chat-bridge/config.json` (edits to this file are picked up automatically on the next
@@ -289,7 +330,8 @@ poll — no daemon restart needed; only `mcp.json` env changes and adapter crede
     },
     "discord":  { "botToken": "", "channelId": "", "allowedUserIds": [] },
     "telegram": { "botToken": "", "chatId": "", "allowedUserIds": [] }
-  }
+  },
+  "ack": { "enabled": false, "language": "auto" } // read receipts; see above
 }
 ```
 

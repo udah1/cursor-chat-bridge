@@ -4,12 +4,23 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { CONFIG_PATH, DAEMON_FILE, MEDIA_DIR, ensureRuntimeDir } from "./paths.js";
 import { loadConfig, type BridgeConfig } from "./config.js";
-import { Store } from "./state.js";
+import { Store, type SessionRecord } from "./state.js";
 import { createAdapter } from "./adapters/index.js";
 import type { InboundAttachment, InboundMsg, ThreadRef, TransportAdapter } from "./types.js";
 import { log } from "./logger.js";
 import { pushNotify } from "./notify.js";
 import { createSttProvider, sanitizeSttError, withTimeout, type SttConfig, type SttProvider } from "./stt.js";
+import {
+  ackEnabledFor,
+  ackForMessage,
+  ackForStop,
+  ackForTranscript,
+  detectLanguage,
+  normalizeLanguage,
+  resolveLanguage,
+  resolveStopLanguage,
+  type AckLanguage,
+} from "./ack.js";
 
 /** Drop bracketed audio/voice notes so they aren't duplicated when we build the transcript message. */
 export function stripAudioNotes(text: string): string {
@@ -81,7 +92,8 @@ export class Daemon {
       this.sttResolved = false;
       this.sttProvider = null;
       log(
-        `config reloaded: pollIntervalMs=${this.cfg.pollIntervalMs} stt.enabled=${this.cfg.stt?.enabled} stt.provider=${this.cfg.stt?.provider}`,
+        `config reloaded: pollIntervalMs=${this.cfg.pollIntervalMs} stt.enabled=${this.cfg.stt?.enabled} ` +
+          `stt.provider=${this.cfg.stt?.provider} ack.enabled=${this.cfg.ack?.enabled}`,
       );
     } catch (e) {
       log(`config reload failed, keeping previous: ${(e as Error).message}`);
@@ -245,6 +257,53 @@ export class Daemon {
     return this.send(res, 200, { ok: true, messageId });
   }
 
+  /**
+   * Post a daemon-authored note (an acknowledgment) to a session's thread. Recording it as an own
+   * message is not optional: GitHub's poll returns every comment including ours, so an unrecorded
+   * note would come back as user input and the daemon would end up acking its own acks. No ntfy
+   * push either — the user just wrote the message being acknowledged. Best-effort by design: a
+   * failed ack must never block message delivery.
+   */
+  private async postAck(rec: SessionRecord, text: string): Promise<void> {
+    if (!rec.thread) return;
+    try {
+      const adapter = await this.getAdapter(rec.adapter);
+      const { messageId } = await adapter.send(rec.thread, text);
+      this.store.recordOwnMessage(rec.id, messageId);
+    } catch (e: any) {
+      log(`ack failed for session ${rec.id}: ${e?.message ?? e}`);
+    }
+  }
+
+  /** Immediate "got it" per fresh arrival. Stop messages are covered by the stop note instead. */
+  private async sendAcks(rec: SessionRecord, messages: InboundMsg[]): Promise<void> {
+    const cfg = this.cfg.ack;
+    if (!ackEnabledFor(cfg, rec.adapter)) return;
+    const sttEnabled = !!this.cfg.stt?.enabled;
+    for (const m of messages) {
+      if (isStop(m.text)) continue;
+      const lang = this.ackLang(rec, detectLanguage(m.text));
+      const note = ackForMessage(m, sttEnabled, cfg, lang);
+      if (note) await this.postAck(rec, note);
+    }
+  }
+
+  /**
+   * Resolve the ack language and remember any fresh signal, so a later message that carries none
+   * (an uncaptioned image, a bare `stop`) is still answered in the language the user writes in.
+   */
+  private ackLang(rec: SessionRecord, detected: AckLanguage | null): AckLanguage {
+    if (detected) this.store.setAckLang(rec.id, detected);
+    return resolveLanguage(this.cfg.ack!, detected, rec.ackLang);
+  }
+
+  /** Tell the channel the session ended. Deduped via `stopRequested` so it's posted once. */
+  private async ackStop(rec: SessionRecord, detected: AckLanguage | null = null): Promise<void> {
+    const cfg = this.cfg.ack;
+    if (rec.stopRequested || !ackEnabledFor(cfg, rec.adapter)) return;
+    await this.postAck(rec, ackForStop(resolveStopLanguage(cfg, rec.ackLang, detected)));
+  }
+
   private async poll(url: URL, res: http.ServerResponse): Promise<void> {
     // Pick up config edits (poll interval, STT provider/keys) without a daemon restart.
     this.reloadConfigIfChanged();
@@ -279,6 +338,10 @@ export class Daemon {
         messages = messages.concat(this.store.drainInbox(sessionId));
       }
 
+      // Acknowledge arrivals first, before the slow work below (attachment downloads, STT), so
+      // the user sees "got it" immediately rather than after a transcription round-trip.
+      if (messages.length > 0) await this.sendAcks(rec, messages);
+
       // Download any media attachments to disk and surface their local paths to the agent.
       if (messages.length > 0) await this.materializeAttachments(sessionId, adapter, messages);
 
@@ -287,9 +350,12 @@ export class Daemon {
       if (messages.length > 0) messages = this.routeSttMessages(sessionId, messages);
 
       // A stop keyword in any user message ends the session.
-      if (messages.some((m) => isStop(m.text))) stopped = true;
+      const stopMsg = messages.find((m) => isStop(m.text));
+      if (stopMsg) stopped = true;
 
       if (stopped) {
+        // "עצור" vs "stop" is itself the language signal for the goodbye note.
+        await this.ackStop(rec, detectLanguage(stopMsg?.text));
         this.store.requestStop(sessionId);
         return this.send(res, 200, { messages, stopped: true, generation: rec.generation });
       }
@@ -376,6 +442,8 @@ export class Daemon {
     cfg: SttConfig
   ): Promise<void> {
     let note: string;
+    let transcript = "";
+    let transcriptLang: string | undefined;
     try {
       if (!provider) {
         note = "[voice message received but speech-to-text is not usable — check stt.provider / API key]";
@@ -391,6 +459,8 @@ export class Daemon {
           "stt"
         );
         const t = (res.text || "").trim();
+        transcript = t;
+        transcriptLang = res.language;
         const lang = res.language ? ` (${res.language})` : "";
         note = t ? `[voice transcript${lang}]: ${t}` : "[voice message received but the transcription was empty]";
         log(`stt: ${provider.name} OK for msg ${m.id} (${t.length} chars${lang})`);
@@ -404,10 +474,27 @@ export class Daemon {
       note = `[voice message transcription failed: ${sanitizeSttError(e)}]`;
       log(`stt: transcription FAILED for msg ${m.id}: ${sanitizeSttError(e)}`);
     }
+    // Second ack for a voice note: the first one only said "transcribing", so echo back what we
+    // actually heard. `synthetic` on the injected message keeps it from being acked a third time.
+    const rec = this.store.get(sessionId);
+    if (transcript && rec) {
+      const ackCfg = this.cfg.ack;
+      if (ackEnabledFor(ackCfg, rec.adapter)) {
+        // The transcriber reports the spoken language; fall back to reading the transcript itself.
+        const detected = normalizeLanguage(transcriptLang) ?? detectLanguage(transcript);
+        await this.postAck(rec, ackForTranscript(transcript, ackCfg, this.ackLang(rec, detected)));
+      }
+    }
     const base = stripAudioNotes(m.text);
     const text = base ? `${base}\n\n${note}` : note;
     // A transcribed "stop" must NOT auto-end the session; the bracketed prefix ensures isStop() misses.
-    this.store.enqueueInbound(sessionId, { id: `stt-${m.id}`, text, ts: Date.now(), authorId: m.authorId });
+    this.store.enqueueInbound(sessionId, {
+      id: `stt-${m.id}`,
+      text,
+      ts: Date.now(),
+      authorId: m.authorId,
+      synthetic: true,
+    });
     this.sttInFlight.delete(m.id);
     log(`stt: injected result for session ${sessionId} (src msg ${m.id})`);
   }
@@ -417,6 +504,8 @@ export class Daemon {
     const { sessionId, closeThread } = body;
     const rec = this.store.get(sessionId);
     if (!rec) return this.send(res, 404, { error: "unknown session" });
+    // Must precede adapter.stop(): Discord deletes the channel there, taking the note with it.
+    await this.ackStop(rec);
     this.store.requestStop(sessionId);
     if (closeThread && rec.thread) {
       const adapter = await this.getAdapter(rec.adapter).catch(() => null);

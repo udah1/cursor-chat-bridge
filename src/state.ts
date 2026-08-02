@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { STATE_PATH, ensureRuntimeDir } from "./paths.js";
 import type { InboundMsg, ThreadRef } from "./types.js";
+import type { AckLanguage } from "./ack.js";
 
 export interface SessionRecord {
   id: string;
@@ -17,6 +18,8 @@ export interface SessionRecord {
   ownMessageIds: string[];
   /** Inbound queue for global-ingest adapters. */
   inbox: InboundMsg[];
+  /** Last language the user wrote in, used to pick an ack language for signal-less messages. */
+  ackLang?: AckLanguage;
   createdAt: number;
   lastActivity: number;
 }
@@ -106,6 +109,14 @@ export class Store {
 
   isOwnMessage(id: string, messageId: string): boolean {
     return this.sessions.get(id)?.ownMessageIds.includes(messageId) ?? false;
+  }
+
+  /** Remember the language the user writes in, so an image or a bare `stop` still gets answered in it. */
+  setAckLang(id: string, lang: AckLanguage): void {
+    const rec = this.sessions.get(id);
+    if (!rec || rec.ackLang === lang) return;
+    rec.ackLang = lang;
+    this.persist();
   }
 
   enqueueInbound(id: string, msg: InboundMsg): void {

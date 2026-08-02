@@ -3,6 +3,7 @@ import { execSync } from "node:child_process";
 import { CONFIG_PATH, ensureRuntimeDir } from "./paths.js";
 import type { NotifyConfig } from "./notify.js";
 import { STT_DEFAULTS, type SttConfig } from "./stt.js";
+import { ACK_DEFAULTS, type AckConfig } from "./ack.js";
 
 export interface BridgeConfig {
   activeAdapter: string;
@@ -23,6 +24,8 @@ export interface BridgeConfig {
   notify?: NotifyConfig;
   /** Speech-to-text (voice message transcription). Disabled by default. */
   stt?: SttConfig;
+  /** Immediate "got it" replies to inbound remote messages. Disabled by default. */
+  ack?: AckConfig;
 }
 
 const DEFAULTS: BridgeConfig = {
@@ -46,6 +49,7 @@ export function loadConfig(): BridgeConfig {
   }
   const cfg: BridgeConfig = { ...DEFAULTS, ...raw, adapters: raw.adapters ?? {} };
   cfg.stt = { ...STT_DEFAULTS, ...(raw.stt ?? {}) };
+  cfg.ack = { ...ACK_DEFAULTS, ...(raw.ack ?? {}) };
   applyEnvOverrides(cfg);
   // minPollIntervalMs is the real knob; keep a small absolute floor (1s) to avoid hammering APIs.
   cfg.pollIntervalMs = Math.max(cfg.pollIntervalMs, cfg.minPollIntervalMs, 1000);
@@ -104,6 +108,8 @@ export function applyEnvOverrides(cfg: BridgeConfig): void {
   if (e.BRIDGE_STT_API_KEY) stt.apiKey = e.BRIDGE_STT_API_KEY.trim();
   if (e.BRIDGE_STT_BASE_URL) stt.baseUrl = e.BRIDGE_STT_BASE_URL.trim();
   if (e.BRIDGE_STT_LOCAL_BIN) stt.localBin = e.BRIDGE_STT_LOCAL_BIN.trim();
+  // No BRIDGE_ACK_* overrides on purpose: the daemon is a singleton spawned by whichever process
+  // got there first, so per-window env wouldn't reliably reach it. config.json hot-reloads instead.
 
   if (e.BRIDGE_NTFY_TOPIC || e.BRIDGE_NTFY_PRIORITY || e.BRIDGE_NTFY_SERVER) {
     cfg.notify = { ...(cfg.notify ?? {}) };

@@ -41,6 +41,11 @@ export interface InboundMsg {
   authorId?: string;
   /** Media attachments (images, etc.) sent alongside the message. */
   attachments?: InboundAttachment[];
+  /**
+   * Injected by the daemon rather than received from the channel (e.g. an STT transcript).
+   * The user never typed it, so it must not be acknowledged back at them.
+   */
+  synthetic?: boolean;
 }
 
 export interface PollResult {
