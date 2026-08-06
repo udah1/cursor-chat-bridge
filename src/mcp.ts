@@ -89,83 +89,147 @@ function failClosedMessage(reason: "empty" | "stale" | "ambiguous", freshMs: num
 const SESSION_ARG = {
   type: "string",
   description:
-    "REQUIRED. The session handle returned by bridge_start for THIS conversation. Always pass it so the right chat " +
-    "thread is used and multiple conversations (even in the same workspace) stay separate.",
+    "Session handle returned by bridge_start for THIS conversation. Routes the call to the right chat thread and " +
+    "keeps concurrent conversations — even two in the same workspace — from crossing over.",
 };
 
-const TEXT_ARG = { type: "string", description: "The message text to post to the chat thread." };
+const TEXT_ARG = {
+  type: "string",
+  description:
+    "Message body to post, as plain text — typically the end-of-turn summary plus the question you need answered. " +
+    "Keep credentials and secrets out of it: whoever can read the chat thread can read this.",
+};
+
+const MAX_BLOCK_MS_ARG = {
+  type: "number",
+  description:
+    "How long to wait for a reply before giving up and returning status 'timeout', in milliseconds. Defaults to " +
+    "50000 and is capped at 55000 to stay inside the MCP call timeout — wait longer by calling again, not by raising this.",
+};
 
 const TOOLS = [
   {
     name: "bridge_start",
+    title: "Start remote chat mode",
     description:
-      "Start remote chat mode for this conversation: opens a per-conversation thread/channel in the configured " +
-      "chat channel (GitHub issue / Telegram topic / Discord channel) and routes end-of-turn summaries there. " +
-      "Call this when the user asks to start remote chat / bridge / telegram mode (in any language). If the " +
-      "channel isn't configured, this returns setup guidance — follow it to onboard the user, then call " +
-      "bridge_start again.",
+      "Opens a dedicated thread for THIS conversation in the configured chat channel (GitHub issue, Telegram topic, " +
+      "or Discord channel) and returns the session handle that every other bridge_* tool requires. Call it when the " +
+      "user asks — in any language — to start remote chat, bridge, or Telegram mode. " +
+      "Call it once per conversation: every call without `session` opens a NEW thread, so re-arm an existing session " +
+      "by passing its handle back instead of starting again. " +
+      "When no channel is configured it returns onboarding instructions rather than failing, so follow them and call " +
+      "again. It identifies the conversation from Cursor's pending handshake and fails closed with guidance when that " +
+      "is ambiguous — it will not guess which conversation it belongs to.",
     inputSchema: {
       type: "object",
       properties: {
         title: {
           type: "string",
           description:
-            "Session title — a concise (≤6-word) summary of THIS conversation's topic, mirroring how it appears " +
-            "in Cursor's chat list (e.g. \"GitHub Actions autopublish\"). Names the thread/channel. Defaults to " +
-            "the folder name if omitted.",
+            "Names the thread — a concise (≤6-word) summary of THIS conversation's topic, mirroring how it reads in " +
+            'Cursor\'s chat list (e.g. "GitHub Actions autopublish"). Falls back to the folder name, which is a poor ' +
+            "label when several conversations share a workspace.",
         },
-        adapter: { type: "string", description: "Override the channel adapter (github|telegram|discord)." },
+        adapter: {
+          type: "string",
+          enum: ["github", "telegram", "discord"],
+          description: "Chat channel to use for this session, overriding the configured default.",
+        },
         session: {
           type: "string",
           description:
-            "Optional. Only when RE-starting an existing session (idempotent re-arm) — pass the handle you got " +
-            "from a previous bridge_start. Omit for a brand-new start.",
+            "Handle from a previous bridge_start, to re-arm that existing session instead of opening a second thread. " +
+            "Omit for a brand-new start.",
         },
       },
     },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
   {
     name: "bridge_send",
+    title: "Post a message to the chat thread",
     description:
-      "Post a message (e.g. a turn summary or a question) to this conversation's chat thread. Put the message in " +
-      "the `text` argument (alias: `message`). Pass the `session` handle returned by bridge_start (required).",
+      "Posts one message to this conversation's chat thread and returns immediately without waiting for a reply. " +
+      "Use it for a progress note or a closing remark that needs no answer; when you need the user to respond, use " +
+      "bridge_send_and_await instead so the post and the wait are one call. " +
+      "Each call appends a new message and never edits or replaces an earlier one, so a retry after a failure leaves " +
+      "a duplicate in the thread.",
     inputSchema: {
       type: "object",
-      properties: { text: TEXT_ARG, message: TEXT_ARG, session: SESSION_ARG },
+      properties: {
+        text: TEXT_ARG,
+        message: { ...TEXT_ARG, description: `Alias for \`text\`; ignored when \`text\` is present. ${TEXT_ARG.description}` },
+        session: SESSION_ARG,
+      },
       required: ["session"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
   {
     name: "bridge_await",
+    title: "Wait for the user's reply",
     description:
-      "Block waiting for the user's reply in the chat thread (single long-poll window). Returns the reply text, " +
-      "or status 'timeout' (call again to keep waiting) or 'stopped' (mode ended). Pass the `session` handle from bridge_start (required).",
+      "Blocks on this conversation's chat thread for a single long-poll window and returns JSON with status " +
+      "'message' plus the reply text, 'timeout', or 'stopped'. Use it when you already posted with bridge_send and " +
+      "only need the answer; to post and wait together, prefer bridge_send_and_await. " +
+      "Replies are consumed as they are delivered, so each message comes back exactly once and a later call will not " +
+      "see it again. A 'timeout' is normal rather than an error — the window elapsed with no reply, and you keep " +
+      "waiting by calling again. 'stopped' means the user ended remote chat mode, so stop calling bridge_* tools " +
+      "until a new bridge_start.",
     inputSchema: {
       type: "object",
-      properties: { maxBlockMs: { type: "number" }, session: SESSION_ARG },
+      properties: { maxBlockMs: MAX_BLOCK_MS_ARG, session: SESSION_ARG },
       required: ["session"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
   {
     name: "bridge_send_and_await",
+    title: "Post a message and wait for the reply",
     description:
-      "Post a message then block for the user's reply. Convenience for end-of-turn summary + question. Put the " +
-      "message in the `text` argument (alias: `message`). Pass the `session` handle returned by bridge_start (required).",
+      "Posts a message to this conversation's chat thread and then blocks for the reply in one round trip — the " +
+      "end-of-turn summary-plus-question pattern, and the tool to reach for by default. Equivalent to bridge_send " +
+      "followed by bridge_await; use those separately only when you need to post and wait at different moments. " +
+      "Returns the same envelope as bridge_await: 'message' with the reply, 'timeout', or 'stopped'. The message is " +
+      "posted before the wait begins, so after a 'timeout' the user has already seen it — send only what is new " +
+      "rather than repeating the summary, which would post it twice.",
     inputSchema: {
       type: "object",
-      properties: { text: TEXT_ARG, message: TEXT_ARG, maxBlockMs: { type: "number" }, session: SESSION_ARG },
+      properties: {
+        text: TEXT_ARG,
+        message: { ...TEXT_ARG, description: `Alias for \`text\`; ignored when \`text\` is present. ${TEXT_ARG.description}` },
+        maxBlockMs: MAX_BLOCK_MS_ARG,
+        session: SESSION_ARG,
+      },
       required: ["session"],
     },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
   {
     name: "bridge_stop",
-    description: "Stop remote chat mode for this conversation. Pass the `session` handle from bridge_start (required).",
+    title: "End remote chat mode",
+    description:
+      "Ends remote chat mode for THIS conversation: the daemon stops polling the thread, any in-flight wait returns " +
+      "'stopped', and the session handle stops working — resuming later needs a fresh bridge_start. " +
+      "The conversation history is left intact; the thread is not deleted and a GitHub issue is not closed, so the " +
+      "record stays readable afterwards. Calling it twice, or on a session that already ended, is harmless. " +
+      "Use it when the user says they are done — not in response to a 'timeout' from bridge_await, which only means " +
+      "no reply has arrived yet.",
     inputSchema: { type: "object", properties: { session: SESSION_ARG }, required: ["session"] },
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
   },
   {
     name: "bridge_status",
-    description: "Show remote chat mode status for this conversation. Pass the `session` handle from bridge_start (required).",
+    title: "Show remote chat mode status",
+    description:
+      "Reports the bridge's record for THIS conversation as JSON — which adapter is in use, the thread it is bound " +
+      "to, and whether the session is still active — or a null session once it has ended. " +
+      "Diagnostics only: it posts nothing to the thread and does not consume a pending reply, so unlike bridge_await " +
+      "it is safe to call at any point, including while deciding whether a bridge_start is still needed. " +
+      "It answers from local daemon state without contacting the chat provider, so it confirms what the bridge " +
+      "believes rather than that the provider is reachable.",
     inputSchema: { type: "object", properties: { session: SESSION_ARG }, required: ["session"] },
+    annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
   },
 ];
 
