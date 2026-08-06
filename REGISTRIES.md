@@ -27,13 +27,31 @@ Listing, claiming, and *releasing* are three different things on Glama.
 - **Claimed** — `glama.json` at repo root (`maintainers: ["udah1"]`) + GitHub OAuth. ✅
 - **Released** — NOT the same as a GitHub release, and NOT covered by the Official Registry.
   A Glama release is a *containerized build* Glama runs security scans against, and it is what
-  earns the **A quality grade** (and what `awesome-mcp-servers` requires). Steps:
-  1. `Dockerfile` is committed at repo root (multi-stage; `CMD ["node", "dist/mcp.js"]`).
-     Verified: the server starts and answers `tools/list` with no config, no daemon, empty HOME.
-  2. Go to <https://glama.ai/mcp/servers/udah1/cursor-chat-bridge/admin/dockerfile>, configure the
-     build spec (build steps / CMD / env schema), click **Deploy** → runs a build test.
-  3. When the build test passes, click **Make Release**, enter the version, **Create & Publish**.
-  4. Re-run the same flow to update a release (the new one replaces the old).
+  earns the **A quality grade** (and what `awesome-mcp-servers` requires).
+
+  **Glama ignores the repo's `Dockerfile`.** It generates its own from the form at
+  <https://glama.ai/mcp/servers/udah1/cursor-chat-bridge/admin/dockerfile> — that generated file
+  does `git clone` + `git checkout <sha>`, then runs your build steps and CMD. So the build spec
+  below is the only thing that matters; the repo `Dockerfile` is just for local/self-hosting.
+
+  Values that make the build test pass:
+
+  | Field | Value |
+  | --- | --- |
+  | Build steps | `["npm ci", "npm run build"]` (repo ships `package-lock.json`, not a pnpm lockfile) |
+  | CMD arguments | `["mcp-proxy", "--", "node", "dist/mcp.js"]` |
+  | Placeholder parameters | `{}` — the server needs no config to answer `tools/list` |
+  | Pinned commit SHA | empty, so builds track the latest commit |
+
+  **The CMD is the one that bites:** `dist/cli.js` is the CLI — it prints usage and exits 0, so a
+  container pointed at it dies before `mcp-proxy` can introspect anything, and the test fails with
+  the server never coming up. The MCP server is `dist/mcp.js` (bin `chat-bridge-mcp`).
+
+  Also: Glama builds the commit *it* last synced, which lags GitHub. If the page shows an old
+  "Current head commit", click **sync** next to it before deploying.
+
+  Then: **Deploy** → build test → when green, **Make Release** → version → **Create & Publish**.
+  Re-run the same flow to update a release (the new one replaces the old).
 - Once scored, the README badge populates: `https://glama.ai/mcp/servers/udah1/cursor-chat-bridge`
 
 ## 2. Official MCP Registry (auto-propagates to PulseMCP, Glama, VS Code)

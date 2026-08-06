@@ -1,10 +1,13 @@
-# Container image used by Glama (https://glama.ai/mcp/servers/udah1/cursor-chat-bridge)
-# to build the server, run security scans, and let users deploy it.
+# Reference container image for the stdio MCP server (local testing, mcp.so, self-hosting).
 #
-# Scope: this image runs ONLY the stdio MCP entrypoint. Introspection (`tools/list`)
-# works with no configuration at all — that is what Glama's build test exercises.
-# Actually invoking a bridge_* tool additionally needs the local daemon and a
-# configured chat adapter (see README); that is inherent to a locally-installed tool.
+# NOTE: Glama does NOT build this file. It generates its own Dockerfile from the build spec in
+# its admin UI; the values that make that build pass are documented in REGISTRIES.md §1.
+# The critical one: the start command must be `dist/mcp.js` (the MCP server). `dist/cli.js` is
+# the CLI — it prints usage and exits, so a container pointed at it dies instantly.
+#
+# Scope: this image runs ONLY the stdio MCP entrypoint. Introspection (`tools/list`) works with
+# no configuration at all. Actually invoking a bridge_* tool additionally needs the local daemon
+# and a configured chat adapter (see README); that is inherent to a locally-installed tool.
 
 FROM node:24-alpine AS build
 WORKDIR /app
