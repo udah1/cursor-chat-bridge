@@ -21,14 +21,24 @@ Order matters: **Glama first** (awesome-mcp-servers now requires a Glama listing
 
 ## 1. Glama (highest priority — this is what AI agents read)
 
-- `glama.json` is committed at repo root (`maintainers: ["udah1"]`).
-- Claim it: go to <https://glama.ai/mcp/servers> → **Add MCP Server** → repo URL
-  `https://github.com/udah1/cursor-chat-bridge` → authenticate with GitHub (repo is under your
-  personal account, so OAuth auto-associates you). Glama crawls + scores within ~24h.
-- Once scored, the badge in the README populates:
-  `https://glama.ai/mcp/servers/udah1/cursor-chat-bridge`
+Listing, claiming, and *releasing* are three different things on Glama.
+
+- **Listed** — automatic (Glama ingests the Official MCP Registry, see §2). ✅
+- **Claimed** — `glama.json` at repo root (`maintainers: ["udah1"]`) + GitHub OAuth. ✅
+- **Released** — NOT the same as a GitHub release, and NOT covered by the Official Registry.
+  A Glama release is a *containerized build* Glama runs security scans against, and it is what
+  earns the **A quality grade** (and what `awesome-mcp-servers` requires). Steps:
+  1. `Dockerfile` is committed at repo root (multi-stage; `CMD ["node", "dist/mcp.js"]`).
+     Verified: the server starts and answers `tools/list` with no config, no daemon, empty HOME.
+  2. Go to <https://glama.ai/mcp/servers/udah1/cursor-chat-bridge/admin/dockerfile>, configure the
+     build spec (build steps / CMD / env schema), click **Deploy** → runs a build test.
+  3. When the build test passes, click **Make Release**, enter the version, **Create & Publish**.
+  4. Re-run the same flow to update a release (the new one replaces the old).
+- Once scored, the README badge populates: `https://glama.ai/mcp/servers/udah1/cursor-chat-bridge`
 
 ## 2. Official MCP Registry (auto-propagates to PulseMCP, Glama, VS Code)
+
+> Propagation gets you *listed* on Glama; it does not create a Glama **release** (see §1).
 
 1. Add to `package.json`: `"mcpName": "io.github.udah1/cursor-chat-bridge"` (already done if present).
 2. Generate the manifest: `npx @modelcontextprotocol/mcp-publisher init` → produces `server.json`

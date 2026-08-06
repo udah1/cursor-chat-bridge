@@ -1,0 +1,12 @@
+.git
+.github
+node_modules
+dist
+test
+docs
+*.log
+*.tgz
+.DS_Store
+HANDOFF.md
+TRACKING.md
+REGISTRIES.md
