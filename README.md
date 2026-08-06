@@ -17,6 +17,7 @@ looping until you stop it. Step away from the keyboard; keep shipping from your 
 [![node](https://img.shields.io/node/v/cursor-telegram-chat?logo=node.js&logoColor=white)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
 [![CI](https://img.shields.io/github/actions/workflow/status/udah1/cursor-chat-bridge/publish.yml?branch=master&logo=githubactions&logoColor=white&label=publish)](https://github.com/udah1/cursor-chat-bridge/actions/workflows/publish.yml)
+[![Glama MCP server](https://glama.ai/mcp/servers/udah1/cursor-chat-bridge/badges/score.svg)](https://glama.ai/mcp/servers/udah1/cursor-chat-bridge)
 
 <img src="docs/architecture.png" alt="cursor-chat-bridge round-trip flow" width="760">
 
