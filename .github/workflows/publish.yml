@@ -76,3 +76,36 @@ jobs:
           git push origin "v${{ steps.check.outputs.version }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Keep the Official MCP Registry (io.github.udah1/cursor-chat-bridge) in lockstep with npm.
+      # It propagates onward to Glama / PulseMCP / VS Code, so skipping this is what makes the
+      # ecosystem listings drift behind npm. Auth is the same OIDC identity as the npm publish —
+      # no secrets. Runs after tagging so a registry hiccup can't block the git tag.
+      - name: Publish to the Official MCP Registry
+        if: steps.check.outputs.publish == 'true'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.check.outputs.version }}"
+          NAME=$(node -p "require('./package.json').name")
+
+          curl -sSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" \
+            | tar xz mcp-publisher
+
+          # server.json is a template; stamp the version we just shipped so it always matches npm.
+          node -e '
+            const fs = require("fs");
+            const v = process.argv[1];
+            const s = JSON.parse(fs.readFileSync("server.json", "utf8"));
+            s.version = v;
+            s.packages = (s.packages || []).map((p) => ({ ...p, version: v }));
+            fs.writeFileSync("server.json", JSON.stringify(s, null, 2) + "\n");
+          ' "$VERSION"
+
+          # The registry validates against the npm tarball; give the CDN a moment to serve it.
+          for _ in $(seq 1 10); do
+            npm view "$NAME@$VERSION" version >/dev/null 2>&1 && break
+            sleep 6
+          done
+
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish

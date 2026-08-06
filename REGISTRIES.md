@@ -38,6 +38,11 @@ Listing, claiming, and *releasing* are three different things on Glama.
 
 ## 2. Official MCP Registry (auto-propagates to PulseMCP, Glama, VS Code)
 
+> **Automated.** `.github/workflows/publish.yml` publishes to the registry after every npm
+> release, using `mcp-publisher login github-oidc` (same OIDC identity as the npm publish, no
+> secrets). It stamps `server.json` with the released version, so the registry never drifts
+> behind npm. The steps below are only needed for a manual/first-time publish.
+>
 > Propagation gets you *listed* on Glama; it does not create a Glama **release** (see §1).
 
 1. Add to `package.json`: `"mcpName": "io.github.udah1/cursor-chat-bridge"` (already done if present).
