@@ -110,15 +110,29 @@ function daemonStop(sessionId) {
   });
 }
 
+function parseHookPayload(raw) {
+  // Cursor/PowerShell on Windows often prefixes stdin with a UTF-8 BOM.
+  // Strip BOM + leading junk so JSON.parse can see the object.
+  if (!raw) return null;
+  const cleaned = String(raw).replace(/^\uFEFF/, "");
+  try {
+    return JSON.parse(cleaned);
+  } catch {}
+  const start = cleaned.indexOf("{");
+  if (start > 0) {
+    try {
+      return JSON.parse(cleaned.slice(start));
+    } catch {}
+  }
+  return null;
+}
+
 async function main() {
   const raw = readStdin();
   try {
     fs.appendFileSync(DEBUG_LOG, `[${new Date().toISOString()}] SUBMIT ${raw.slice(0, 2000)}\n`);
   } catch {}
-  let payload = null;
-  try {
-    payload = JSON.parse(raw);
-  } catch {}
+  const payload = parseHookPayload(raw);
 
   const conversationId = payload?.conversation_id;
   const workspace = Array.isArray(payload?.workspace_roots) ? payload.workspace_roots[0] : null;
