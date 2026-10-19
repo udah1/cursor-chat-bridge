@@ -159,16 +159,29 @@ function emitFollowup(message) {
   process.stdout.write(JSON.stringify({ followup_message: message }));
 }
 
+function parseHookPayload(raw) {
+  // Cursor/PowerShell on Windows often prefixes stdin with a UTF-8 BOM.
+  if (!raw) return null;
+  const cleaned = String(raw).replace(/^\uFEFF/, "");
+  try {
+    return JSON.parse(cleaned);
+  } catch {}
+  const start = cleaned.indexOf("{");
+  if (start > 0) {
+    try {
+      return JSON.parse(cleaned.slice(start));
+    } catch {}
+  }
+  return null;
+}
+
 async function main() {
   const now = Date.now();
   const raw = readStdin();
   try {
     fs.appendFileSync(DEBUG_LOG, `[${new Date().toISOString()}] STOP ${raw.slice(0, 4000)}\n`);
   } catch {}
-  let payload = null;
-  try {
-    payload = JSON.parse(raw);
-  } catch {}
+  const payload = parseHookPayload(raw);
 
   const conversationId = payload?.conversation_id;
   const marker = readConvMarker(conversationId);
